@@ -1,0 +1,25 @@
+[server]
+listen_addr = ":25"
+domain = "example.org"
+tls_cert_file = "/etc/letsencrypt/live/"
+tls_key_file = "/etc/letsencrypt/live/"
+
+
+[nje]
+binary_path = "/usr/local/bin/punch"
+receive_path = "/usr/local/bin/receive"
+run_as_user = "smtp"
+distribution = "STANDARD" 
+class = "A"
+form = "STANDARD" 
+
+[spool]
+directory = "/var/spool/bitnet"
+interval = "5s"
+
+[routing]
+default_action = "delete"
+error_recipient = "maint@example.org"
+
+[routing.domain_map]
+"example.org" = { node = "EXAMPLE", dkim_key_path = "./dkim_private.pem", dkim_selector = "default" }
