@@ -174,25 +174,28 @@ func processSpoolFile(path string) {
 		signedMsg = msg.Bytes()
 	}
 
+	var sendErr error
 	target := config.Spool.TargetSMTP
+
 	if target == "" {
 		log.Printf("Relaying mail from %s to %s via Direct MX", from, to)
-		if err := sendDirectMX(from, to, signedMsg); err != nil {
-			log.Printf("Failed to send email from spool %s: %v", path, err)
-			return
-		}
+		sendErr = sendDirectMX(from, to, signedMsg)
 	} else {
 		log.Printf("Relaying mail from %s to %s via %s", from, to, target)
-
 		var auth smtp.Auth
 		if config.Spool.TargetUser != "" {
 			host, _, _ := net.SplitHostPort(target)
 			auth = smtp.PlainAuth("", config.Spool.TargetUser, config.Spool.TargetPass, host)
 		}
+		sendErr = sendMail(target, auth, from, []string{to}, signedMsg, true)
+	}
 
-		if err := sendMail(target, auth, from, []string{to}, signedMsg, true); err != nil {
-			log.Printf("Failed to send email from spool %s: %v", path, err)
-			return
+	if sendErr != nil {
+		log.Printf("Delivery failed permanently: %v. Generating bounce to %s via NJE", sendErr, from)
+
+		bounceErr := sendBounce(from, to, sendErr.Error())
+		if bounceErr != nil {
+			log.Printf("Failed to send bounce notification: %v", bounceErr)
 		}
 	}
 
@@ -201,8 +204,50 @@ func processSpoolFile(path string) {
 		log.Printf("Warning: failed to ack/delete spool file %s: %v. Out: %s", path, err, string(out))
 		os.Remove(path)
 	} else {
-		log.Printf("Successfully processed and acked %s", path)
+		log.Printf("Successfully processed (and cleaned up) %s", path)
 	}
+}
+
+func sendBounce(recipient, failedRcpt, reason string) error {
+	bounceSender := fmt.Sprintf("MAILER-DAEMON@%s", config.Server.Domain)
+	subject := fmt.Sprintf("Undeliverable: Mail to %s", failedRcpt)
+
+	timestamp := time.Now().Format(time.RFC1123Z)
+
+	msg := &bytes.Buffer{}
+	fmt.Fprintf(msg, "From: %s\r\n", bounceSender)
+	fmt.Fprintf(msg, "To: %s\r\n", recipient)
+	fmt.Fprintf(msg, "Subject: %s\r\n", subject)
+	fmt.Fprintf(msg, "Date: %s\r\n", timestamp)
+	fmt.Fprintf(msg, "MIME-Version: 1.0\r\n")
+	fmt.Fprintf(msg, "Content-Type: text/plain; charset=utf-8\r\n")
+	fmt.Fprintf(msg, "\r\n")
+	fmt.Fprintf(msg, "This is the RSCS/SMTP Gateway at %s.\r\n\r\n", config.Server.Domain)
+	fmt.Fprintf(msg, "I wasn't able to deliver your message to the following addresses.\r\n")
+	fmt.Fprintf(msg, "This is a permanent error.\r\n\r\n")
+	fmt.Fprintf(msg, "<%s>:\r\n", failedRcpt)
+	fmt.Fprintf(msg, "%s\r\n", reason)
+
+	tmpFile, err := os.CreateTemp("", "bounce-*.txt")
+	if err != nil {
+		return fmt.Errorf("failed to create temp file for bounce: %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	if _, err := tmpFile.Write(msg.Bytes()); err != nil {
+		tmpFile.Close()
+		return fmt.Errorf("failed to write bounce content: %v", err)
+	}
+	tmpFile.Close()
+
+	user := recipient
+	node := ""
+	if idx := strings.LastIndex(recipient, "@"); idx != -1 {
+		user = recipient[:idx]
+		node = recipient[idx+1:]
+	}
+
+	return sendOverNJE(user, node, tmpFile.Name(), "MAIL", "TXT", "Undeliverable Mail")
 }
 
 func sendMail(addr string, auth smtp.Auth, from string, to []string, msg []byte, skipVerify bool) error {
