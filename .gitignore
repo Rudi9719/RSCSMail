@@ -1,0 +1,6 @@
+rscsmail
+config.toml
+*.key
+*.pem
+*.spool
+*.msg
