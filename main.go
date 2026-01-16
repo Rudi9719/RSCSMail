@@ -57,10 +57,9 @@ func (s *Session) Rcpt(to string, opts *smtp.RcptOptions) error {
 	domainConfig, ok := config.Routing.DomainMap[domain]
 	if !ok {
 		log.Printf("Skipping %s: no route for domain %s (From: %s)", to, domain, s.From)
-		s.Conn.Close()
 		return &smtp.SMTPError{
-			Code:    421,
-			Message: "Service not available, closing transmission channel",
+			Code:    550,
+			Message: "Relay access denied",
 		}
 	}
 	_ = domainConfig
