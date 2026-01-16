@@ -12,9 +12,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
-
 	"sync"
+	"time"
 )
 
 var (
@@ -154,6 +153,9 @@ func processSpoolFile(path string) {
 		log.Printf("Skipping %s: missing To/From in parsed content", path)
 		return
 	}
+	if !strings.Contains(from, "@") {
+		from = fmt.Sprintf("%s@%s", from, config.Server.Domain)
+	}
 
 	body := strings.Join(bodyLines, "\r\n")
 
@@ -235,9 +237,6 @@ func sendMail(addr string, auth smtp.Auth, from string, to []string, msg []byte,
 	}
 	defer c.Close()
 	heloName := config.Server.Domain
-	if heloName == "" {
-		heloName = "localhost"
-	}
 	if err := c.Hello(heloName); err != nil {
 		return err
 	}
@@ -257,6 +256,8 @@ func sendMail(addr string, auth smtp.Auth, from string, to []string, msg []byte,
 			if err = c.Auth(auth); err != nil {
 				return err
 			}
+		} else {
+			return fmt.Errorf("authentication required but server did not advertise AUTH extension")
 		}
 	}
 
@@ -298,18 +299,16 @@ func sendDirectMX(from, to string, msg []byte) error {
 	if len(mxs) == 0 {
 		return fmt.Errorf("no MX records found for %s", domain)
 	}
+	const smtpPort = "25"
 
 	for _, mx := range mxs {
-		ports := []string{"587", "465", "25"}
-		for _, port := range ports {
-			target := fmt.Sprintf("%s:%s", mx.Host, port)
-			log.Printf("Attempting delivery to %s...", target)
-
-			if err := sendMail(target, nil, from, []string{to}, msg, true); err == nil {
-				return nil
-			} else {
-				log.Printf("Failed to send to %s: %v", target, err)
-			}
+		target := fmt.Sprintf("%s:%s", mx.Host, smtpPort)
+		log.Printf("Attempting delivery to %s...", target)
+		if err := sendMail(target, nil, from, []string{to}, msg, true); err == nil {
+			log.Printf("Delivery successful to %s", target)
+			return nil
+		} else {
+			log.Printf("Failed to send to %s: %v", target, err)
 		}
 	}
 
