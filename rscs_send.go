@@ -191,6 +191,16 @@ func processSpoolFile(path string) {
 	addRecipients(headers["cc"])
 	addRecipients(headers["bcc"])
 
+	if strings.HasPrefix(strings.ToLower(realSender), "guest") {
+		log.Printf("Guests can not send email: Generating bounce to %s via NJE", realSender)
+
+		bounceErr := sendBounce(realSender, to, "Guests can not send email")
+		if bounceErr != nil {
+			log.Printf("Failed to send bounce notification: %v", bounceErr)
+		}
+		return
+	}
+
 	if target == "" {
 		log.Printf("Relaying mail from %s to %d recipients via Direct MX", realSender, len(allRecipients))
 		for _, rcpt := range allRecipients {

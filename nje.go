@@ -38,7 +38,7 @@ func deriveNJEFilename(email string) (fn, ft string) {
 
 func isValidCMSUser(user string) bool {
 	u := strings.ToLower(user)
-	if u == "root" || u == "operator" || u == "system" {
+	if u == "root" || u == "operator" || u == "system" || strings.HasPrefix(u, "guest") {
 		return false
 	}
 	if len(u) == 0 || len(u) > 8 {
