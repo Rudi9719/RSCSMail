@@ -39,9 +39,7 @@ For example PUBVM uses SMTP@PUBNET for RSCS Mail. I will show you how this invoc
 ```bash
   NOTE SMTP AT PUBNET
 ```
- - For PROFS
-
- PROFS is interface driven, so you just need to address PUBNET(SMTP) or your SMTP NODE(USER) 
+ - PROFS is interface driven, so you just need to address PUBNET(SMTP) or your SMTP NODE(USER) 
 
 
  Once you're started, CMS and PROFS are different. While you're editing the note you will need the following:
