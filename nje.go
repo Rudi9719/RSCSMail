@@ -133,6 +133,14 @@ func handleDispatch(recipient, filePath, cmsFn, cmsFt, subject string) {
 }
 
 func sendOverNJE(user, node, file, cmsFn, cmsFt, subject string) error {
+	if strings.Contains(user, "--") {
+		parts := strings.SplitN(user, "--", 2)
+		if len(parts) == 2 {
+			user = parts[0]
+			node = parts[1]
+		}
+	}
+
 	target := fmt.Sprintf("%s@%s", user, node)
 	log.Printf("DEBUG: sendOverNJE target=%s fn=%s ft=%s subject=%q", target, cmsFn, cmsFt, subject)
 

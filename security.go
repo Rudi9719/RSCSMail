@@ -19,31 +19,42 @@ import (
 )
 
 func ensureDKIMKey(path string) error {
-	if _, err := os.Stat(path); err == nil {
-		return nil
+	if _, err := os.Stat(path); err != nil {
+		log.Printf("DKIM key not found at %s. Generating 2048-bit RSA key...", path)
+
+		key, err := rsa.GenerateKey(rand.Reader, 2048)
+		if err != nil {
+			return fmt.Errorf("failed to generate DKIM key: %v", err)
+		}
+
+		keyBytes := x509.MarshalPKCS1PrivateKey(key)
+		pemBlock := &pem.Block{
+			Type:  "RSA PRIVATE KEY",
+			Bytes: keyBytes,
+		}
+
+		f, err := os.Create(path)
+		if err != nil {
+			return fmt.Errorf("failed to create key file: %v", err)
+		}
+		defer f.Close()
+
+		if err := pem.Encode(f, pemBlock); err != nil {
+			return fmt.Errorf("failed to write key file: %v", err)
+		}
 	}
 
-	log.Printf("DKIM key not found at %s. Generating 2048-bit RSA key...", path)
-
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	keyData, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("failed to generate DKIM key: %v", err)
+		return fmt.Errorf("failed to read DKIM key: %v", err)
 	}
-
-	keyBytes := x509.MarshalPKCS1PrivateKey(key)
-	pemBlock := &pem.Block{
-		Type:  "RSA PRIVATE KEY",
-		Bytes: keyBytes,
+	block, _ := pem.Decode(keyData)
+	if block == nil {
+		return fmt.Errorf("failed to decode DKIM key pem")
 	}
-
-	f, err := os.Create(path)
+	key, err := x509.ParsePKCS1PrivateKey(block.Bytes)
 	if err != nil {
-		return fmt.Errorf("failed to create key file: %v", err)
-	}
-	defer f.Close()
-
-	if err := pem.Encode(f, pemBlock); err != nil {
-		return fmt.Errorf("failed to write key file: %v", err)
+		return fmt.Errorf("failed to parse DKIM key: %v", err)
 	}
 
 	pubBytes, err := x509.MarshalPKIXPublicKey(&key.PublicKey)
@@ -54,7 +65,7 @@ func ensureDKIMKey(path string) error {
 
 	pubBase64 := base64.StdEncoding.EncodeToString(pubBytes)
 	log.Printf("********************************************************************************")
-	log.Printf("* DKIM Key Generated: %s", path)
+	log.Printf("* DKIM Key Loaded: %s", path)
 	log.Printf("* DNS TXT Record (Selector: default):")
 	log.Printf("* v=DKIM1; k=rsa; p=%s", pubBase64)
 	log.Printf("********************************************************************************")
@@ -150,9 +161,14 @@ func signDKIM(msg []byte, from string) ([]byte, error) {
 	}
 
 	options := &dkim.SignOptions{
-		Domain:   domain,
-		Selector: selector,
-		Signer:   key,
+		Domain:                 domain,
+		Selector:               selector,
+		Signer:                 key,
+		HeaderCanonicalization: dkim.CanonicalizationRelaxed,
+		BodyCanonicalization:   dkim.CanonicalizationRelaxed,
+		HeaderKeys: []string{
+			"From", "To", "Cc", "Subject", "Date", "Message-ID", "MIME-Version", "Content-Type",
+		},
 	}
 
 	var signedBuf bytes.Buffer

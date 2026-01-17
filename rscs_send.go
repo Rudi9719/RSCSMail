@@ -74,7 +74,8 @@ func processSpoolFile(path string) {
 	defer os.Remove(tempFile)
 
 	cmd := exec.Command("sudo", "-u", "smtp", receiveCmd, "-n", "-o", tempFile, path)
-	if out, err := cmd.CombinedOutput(); err != nil {
+	out, err := cmd.CombinedOutput()
+	if err != nil {
 		log.Printf("Failed to execute receive for %s: %v. Output: %s", path, err, string(out))
 		return
 	}
@@ -88,6 +89,7 @@ func processSpoolFile(path string) {
 	bodyLines := []string{}
 	scanner := bufio.NewScanner(bytes.NewReader(content))
 	parsingHeaders := true
+	var realSender string
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -99,6 +101,10 @@ func processSpoolFile(path string) {
 			}
 
 			if strings.Contains(strings.ToUpper(line), "MSG:FROM:") {
+				parts := strings.SplitN(line, ":", 3)
+				if len(parts) >= 3 {
+					realSender = strings.TrimSpace(parts[2])
+				}
 				continue
 			}
 
@@ -130,45 +136,78 @@ func processSpoolFile(path string) {
 				if key == "to" || key == "toa" || key == "from" || key == "frm" || key == "cc" || key == "bcc" || key == "subject" {
 					continue
 				}
+
+				log.Printf("Skipping unknown header line: %s", line)
+				continue
 			}
 
 			parsingHeaders = false
 			if strings.HasPrefix(line, "[PUBVM") {
 				break
 			}
+			if isGarbage(line) {
+				continue
+			}
 			bodyLines = append(bodyLines, line)
 		} else {
 			if strings.HasPrefix(line, "[PUBVM") {
 				break
+			}
+			if isGarbage(line) {
+				continue
 			}
 			bodyLines = append(bodyLines, line)
 		}
 	}
 
 	to := headers["to"]
-	from := headers["from"]
+	textFrom := headers["from"]
 	subject := headers["subject"]
 
-	if to == "" || from == "" {
-		log.Printf("Skipping %s: missing To/From in parsed content", path)
-		return
+	if !strings.Contains(realSender, "@") {
+		fields := strings.Fields(realSender)
+		if len(fields) > 0 {
+			realSender = fields[0]
+		}
+		realSender = fmt.Sprintf("%s@%s", realSender, config.Server.Domain)
 	}
-	if !strings.Contains(from, "@") {
-		from = fmt.Sprintf("%s@%s", from, config.Server.Domain)
+
+	finalFrom := realSender
+	if textFrom != "" {
+		cleanName := strings.Trim(textFrom, "\"")
+		finalFrom = fmt.Sprintf("\"%s\" <%s>", cleanName, realSender)
+	}
+
+	if to == "" {
+		log.Printf("Skipping %s: missing To in parsed content", path)
+		return
 	}
 
 	body := strings.Join(bodyLines, "\r\n")
 
 	msg := &bytes.Buffer{}
-	fmt.Fprintf(msg, "From: %s\r\n", from)
+	fmt.Fprintf(msg, "From: %s\r\n", finalFrom)
 	fmt.Fprintf(msg, "To: %s\r\n", to)
 	if cc := headers["cc"]; cc != "" {
 		fmt.Fprintf(msg, "Cc: %s\r\n", cc)
 	}
 	fmt.Fprintf(msg, "Subject: %s\r\n", subject)
+
+	if headers["date"] == "" {
+		fmt.Fprintf(msg, "Date: %s\r\n", time.Now().Format(time.RFC1123Z))
+	} else {
+		fmt.Fprintf(msg, "Date: %s\r\n", headers["date"])
+	}
+	if headers["message-id"] == "" {
+		msgID := fmt.Sprintf("<%d.%s@%s>", time.Now().UnixNano(), "rscs", config.Server.Domain)
+		fmt.Fprintf(msg, "Message-ID: %s\r\n", msgID)
+	} else {
+		fmt.Fprintf(msg, "Message-ID: %s\r\n", headers["message-id"])
+	}
+
 	fmt.Fprintf(msg, "\r\n%s", body)
 
-	signedMsg, err := signDKIM(msg.Bytes(), from)
+	signedMsg, err := signDKIM(msg.Bytes(), realSender)
 	if err != nil {
 		log.Printf("DKIM signing failed (sending unsigned): %v", err)
 		signedMsg = msg.Bytes()
@@ -177,29 +216,51 @@ func processSpoolFile(path string) {
 	var sendErr error
 	target := config.Spool.TargetSMTP
 
+	var allRecipients []string
+
+	seen := make(map[string]bool)
+	addRecipients := func(s string) {
+		for _, r := range strings.Split(s, ",") {
+			r = strings.TrimSpace(r)
+			if r != "" && !seen[r] {
+				allRecipients = append(allRecipients, r)
+				seen[r] = true
+			}
+		}
+	}
+
+	addRecipients(to)
+	addRecipients(headers["cc"])
+	addRecipients(headers["bcc"])
+
 	if target == "" {
-		log.Printf("Relaying mail from %s to %s via Direct MX", from, to)
-		sendErr = sendDirectMX(from, to, signedMsg)
+		log.Printf("Relaying mail from %s to %d recipients via Direct MX", realSender, len(allRecipients))
+		for _, rcpt := range allRecipients {
+			if err := sendDirectMX(realSender, rcpt, signedMsg); err != nil {
+				log.Printf("Failed to send to %s via Direct MX: %v", rcpt, err)
+				sendErr = err
+			}
+		}
 	} else {
-		log.Printf("Relaying mail from %s to %s via %s", from, to, target)
+		log.Printf("Relaying mail from %s to %v via %s", realSender, allRecipients, target)
 		var auth smtp.Auth
 		if config.Spool.TargetUser != "" {
 			host, _, _ := net.SplitHostPort(target)
 			auth = smtp.PlainAuth("", config.Spool.TargetUser, config.Spool.TargetPass, host)
 		}
-		sendErr = sendMail(target, auth, from, []string{to}, signedMsg, true)
+		sendErr = sendMail(target, auth, realSender, allRecipients, signedMsg, true)
 	}
 
 	if sendErr != nil {
-		log.Printf("Delivery failed permanently: %v. Generating bounce to %s via NJE", sendErr, from)
+		log.Printf("Delivery failed permanently: %v. Generating bounce to %s via NJE", sendErr, realSender)
 
-		bounceErr := sendBounce(from, to, sendErr.Error())
+		bounceErr := sendBounce(realSender, to, sendErr.Error())
 		if bounceErr != nil {
 			log.Printf("Failed to send bounce notification: %v", bounceErr)
 		}
 	}
 
-	ackCmd := exec.Command("sudo", "-u", "smtp", receiveCmd, path)
+	ackCmd := exec.Command("sudo", "-u", "smtp", receiveCmd, "-o", "/dev/null", path)
 	if out, err := ackCmd.CombinedOutput(); err != nil {
 		log.Printf("Warning: failed to ack/delete spool file %s: %v. Out: %s", path, err, string(out))
 		os.Remove(path)
@@ -358,4 +419,28 @@ func sendDirectMX(from, to string, msg []byte) error {
 	}
 
 	return fmt.Errorf("all MX records failed for %s", domain)
+}
+
+func isGarbage(line string) bool {
+	nonPrintable := 0
+	for _, r := range line {
+		if r < 32 && r != '\t' {
+			nonPrintable++
+		} else if r > 126 {
+			nonPrintable++
+		}
+	}
+
+	if len(line) > 0 && float64(nonPrintable)/float64(len(line)) > 0.2 {
+		return true
+	}
+	if nonPrintable > 5 {
+		return true
+	}
+
+	if strings.Contains(line, "DKIM Testing") && nonPrintable > 0 {
+		return true
+	}
+
+	return false
 }

@@ -38,31 +38,51 @@ func toEbcdic(s string) []byte {
 }
 
 func writeEbcdicRecord(buf *bytes.Buffer, control []byte, asciiContent string) {
-	record := make([]byte, 80)
+	const maxLen = 80
+	controlLen := len(control)
+	contentSpace := maxLen - controlLen
+	if contentSpace <= 0 {
+		return
+	}
 
-	offset := 0
-	if len(control) > 0 {
+	remaining := asciiContent
+	for {
+		chunkLen := len(remaining)
+		if chunkLen > contentSpace {
+			chunkLen = contentSpace
+		}
+
+		chunk := remaining[:chunkLen]
+		remaining = remaining[chunkLen:]
+
+		record := make([]byte, maxLen)
+		offset := 0
+
 		for _, b := range control {
-			if offset < 80 {
+			if offset < maxLen {
 				record[offset] = b
 				offset++
 			}
 		}
-	}
 
-	ebcdicContent := toEbcdic(asciiContent)
-	for _, b := range ebcdicContent {
-		if offset < 80 {
-			record[offset] = b
-			offset++
+		ebcdicContent := toEbcdic(chunk)
+		for _, b := range ebcdicContent {
+			if offset < maxLen {
+				record[offset] = b
+				offset++
+			}
+		}
+
+		for i := offset; i < maxLen; i++ {
+			record[i] = 0x40
+		}
+
+		buf.Write(record)
+
+		if len(remaining) == 0 {
+			break
 		}
 	}
-
-	for i := offset; i < 80; i++ {
-		record[i] = 0x40
-	}
-
-	buf.Write(record)
 }
 
 func generateEbcdicNote(from string, to []string, subject, fullSender string, body io.Reader, timestamp time.Time) (*bytes.Buffer, error) {

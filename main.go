@@ -19,8 +19,9 @@ import (
 )
 
 var (
-	config       Config
-	htmlTagRegex = regexp.MustCompile("<[^>]*>")
+	config        Config
+	htmlTagRegex  = regexp.MustCompile("<[^>]*>")
+	htmlLinkRegex = regexp.MustCompile(`(?i)<a[^>]*href=["']([^"']*)["'][^>]*>((?s).*?)</a>`)
 )
 
 // NewSession creates a new SMTP session.
@@ -148,7 +149,9 @@ func (s *Session) Data(r io.Reader) error {
 	}
 
 	if !hasPlain && htmlBuf.Len() > 0 {
-		stripped := htmlTagRegex.ReplaceAllString(htmlBuf.String(), "")
+		htmlStr := htmlBuf.String()
+		htmlStr = htmlLinkRegex.ReplaceAllString(htmlStr, "$2 ($1)")
+		stripped := htmlTagRegex.ReplaceAllString(htmlStr, "")
 		bodyBuf.WriteString(stripped)
 	}
 
