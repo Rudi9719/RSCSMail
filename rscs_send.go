@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/smtp"
@@ -63,10 +64,60 @@ func scanSpool() {
 	}
 }
 
+func parseRSCSHeaders(r io.Reader) (map[string]string, error) {
+	headers := make(map[string]string)
+	scanner := bufio.NewScanner(r)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" {
+			break
+		}
+		if isGarbage(line) {
+			break
+		}
+		if idx := strings.Index(line, ":"); idx > 0 {
+			key := strings.TrimSpace(line[:idx])
+			val := strings.TrimSpace(line[idx+1:])
+			headers[key] = val
+		}
+		if line == "END:" {
+			break
+		}
+	}
+	return headers, scanner.Err()
+}
+
+func resolveSender(user, node string) string {
+	domain := config.Server.Domain
+	for d, conf := range config.Routing.DomainMap {
+		if strings.EqualFold(conf.Node, node) {
+			domain = d
+			break
+		}
+	}
+	return fmt.Sprintf("%s@%s", strings.ToLower(user), domain)
+}
+
 func processSpoolFile(path string) {
 	receiveCmd := config.NJE.ReceivePath
 	if receiveCmd == "" {
 		receiveCmd = "receive"
+	}
+
+	var rscsSender string
+	f, err := os.Open(path)
+	if err == nil {
+		rscsHeaders, _ := parseRSCSHeaders(f)
+		f.Close()
+		if frm, ok := rscsHeaders["FRM"]; ok {
+			parts := strings.Split(frm, "@")
+			if len(parts) == 2 {
+				rscsSender = resolveSender(parts[0], parts[1])
+				log.Printf("Parsed RSCS Sender: %s -> %s", frm, rscsSender)
+			}
+		}
+	} else {
+		log.Printf("Warning: failed to open spool file for header parsing: %v", err)
 	}
 
 	tempFile := filepath.Join("/tmp", filepath.Base(path)+".txt")
@@ -85,132 +136,12 @@ func processSpoolFile(path string) {
 		log.Printf("Failed to read converted temp file %s: %v", tempFile, err)
 		return
 	}
-	headers := make(map[string]string)
-	bodyLines := []string{}
-	scanner := bufio.NewScanner(bytes.NewReader(content))
-	parsingHeaders := true
-	var receiveSender string
-	if out != nil {
-		outStr := string(out)
-		words := strings.Fields(outStr)
-		for i, w := range words {
-			if strings.ToLower(w) == "from" && i+2 < len(words) {
-				if strings.ToLower(words[i+2]) == "at" {
-					candidateUser := words[i+1]
-					candidateNode := words[i+3]
-					var domain string
-					for d, conf := range config.Routing.DomainMap {
-						if strings.EqualFold(conf.Node, candidateNode) {
-							domain = d
-							break
-						}
-					}
-					if domain == "" {
-						domain = config.Server.Domain
-					}
-
-					receiveSender = fmt.Sprintf("%s@%s", candidateUser, domain)
-					log.Printf("Identified envelope sender from receive: %s", receiveSender)
-					break
-				}
-			}
-		}
-	}
-	var realSender = receiveSender
-
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		if parsingHeaders {
-			trimmed := strings.TrimSpace(line)
-			if trimmed == "" {
-				continue
-			}
-
-			if strings.Contains(strings.ToUpper(line), "MSG:FROM:") {
-				parts := strings.SplitN(line, ":", 3)
-				if len(parts) >= 3 {
-					realSender = strings.TrimSpace(parts[2])
-				}
-				continue
-			}
-
-			if idx := strings.Index(line, ":"); idx > 0 {
-				rawKey := line[:idx]
-				key := strings.ToLower(strings.TrimFunc(rawKey, func(r rune) bool {
-					return !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9'))
-				}))
-
-				val := strings.TrimSpace(line[idx+1:])
-
-				switch key {
-				case "to", "toa":
-					upperVal := strings.ToUpper(val)
-					if strings.Contains(upperVal, "SMTP") && strings.Contains(upperVal, "--PUBNET") {
-						continue
-					}
-					headers["to"] = val
-				case "from", "frm":
-					headers["from"] = val
-				case "cc":
-					headers["cc"] = val
-				case "bcc":
-					headers["bcc"] = val
-				case "subject":
-					headers["subject"] = val
-				}
-
-				if key == "to" || key == "toa" || key == "from" || key == "frm" || key == "cc" || key == "bcc" || key == "subject" {
-					continue
-				}
-
-				log.Printf("Skipping unknown header line: %s", line)
-				continue
-			}
-
-			parsingHeaders = false
-			if strings.HasPrefix(line, "[PUBVM") {
-				break
-			}
-			if isGarbage(line) {
-				continue
-			}
-			bodyLines = append(bodyLines, line)
-		} else {
-			if strings.HasPrefix(line, "[PUBVM") {
-				break
-			}
-			if isGarbage(line) {
-				continue
-			}
-			bodyLines = append(bodyLines, line)
-		}
-	}
-
-	to := headers["to"]
-	textFrom := headers["from"]
-	subject := headers["subject"]
-
-	if !strings.Contains(realSender, "@") {
-		fields := strings.Fields(realSender)
-		if len(fields) > 0 {
-			realSender = fields[0]
-		}
-		realSender = fmt.Sprintf("%s@%s", realSender, config.Server.Domain)
-	}
-
-	finalFrom := realSender
-	if textFrom != "" {
-		cleanName := strings.Trim(textFrom, "\"")
-		finalFrom = fmt.Sprintf("\"%s\" <%s>", cleanName, realSender)
-	}
+	realSender, finalFrom, to, subject, headers, body := parseSpoolData(content, string(out), rscsSender)
 
 	if to == "" {
 		log.Printf("Skipping %s: missing To in parsed content", path)
 		return
 	}
-
-	body := strings.Join(bodyLines, "\r\n")
 
 	msg := &bytes.Buffer{}
 	fmt.Fprintf(msg, "From: %s\r\n", finalFrom)
@@ -470,4 +401,143 @@ func isGarbage(line string) bool {
 	}
 
 	return false
+}
+
+func parseSpoolData(content []byte, receiveOutput string, rscsSender string) (envelopeSender, headerFrom, to, subject string, headers map[string]string, body string) {
+	headers = make(map[string]string)
+	bodyLines := []string{}
+	scanner := bufio.NewScanner(bytes.NewReader(content))
+	parsingHeaders := true
+	var receiveSender string
+
+	if rscsSender != "" {
+		receiveSender = rscsSender
+	} else if receiveOutput != "" {
+		words := strings.Fields(receiveOutput)
+		for i, w := range words {
+			if strings.ToLower(w) == "from" && i+2 < len(words) {
+				if strings.ToLower(words[i+2]) == "at" {
+					candidateUser := words[i+1]
+					candidateNode := words[i+3]
+					var domain string
+					for d, conf := range config.Routing.DomainMap {
+						if strings.EqualFold(conf.Node, candidateNode) {
+							domain = d
+							break
+						}
+					}
+					if domain == "" {
+						domain = config.Server.Domain
+					}
+
+					receiveSender = fmt.Sprintf("%s@%s", candidateUser, domain)
+					log.Printf("Identified envelope sender from receive: %s", receiveSender)
+					break
+				}
+			}
+		}
+	}
+	var realSender = receiveSender
+
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		if parsingHeaders {
+			trimmed := strings.TrimSpace(line)
+			if trimmed == "" {
+				continue
+			}
+
+			if strings.Contains(strings.ToUpper(line), "MSG:FROM:") {
+				parts := strings.SplitN(line, ":", 3)
+				if len(parts) >= 3 {
+					realSender = strings.TrimSpace(parts[2])
+				}
+				continue
+			}
+
+			if idx := strings.Index(line, ":"); idx > 0 {
+				rawKey := line[:idx]
+				key := strings.ToLower(strings.TrimFunc(rawKey, func(r rune) bool {
+					return !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9'))
+				}))
+
+				val := strings.TrimSpace(line[idx+1:])
+
+				switch key {
+				case "to", "toa":
+					upperVal := strings.ToUpper(val)
+					if strings.Contains(upperVal, "SMTP") && strings.Contains(upperVal, "--PUBNET") {
+						continue
+					}
+					headers["to"] = val
+				case "from", "frm":
+					headers["from"] = val
+				case "cc":
+					headers["cc"] = val
+				case "bcc":
+					headers["bcc"] = val
+				case "subject":
+					headers["subject"] = val
+				case "date":
+					headers["date"] = val
+				}
+
+				if key == "to" || key == "toa" || key == "from" || key == "frm" || key == "cc" || key == "bcc" || key == "subject" || key == "date" {
+					continue
+				}
+
+				log.Printf("Skipping unknown header line: %s", line)
+				continue
+			}
+
+			parsingHeaders = false
+			if strings.HasPrefix(line, "[PUBVM") {
+				break
+			}
+			if isGarbage(line) {
+				continue
+			}
+			bodyLines = append(bodyLines, line)
+		} else {
+			if strings.HasPrefix(line, "[PUBVM") {
+				break
+			}
+			if isGarbage(line) {
+				continue
+			}
+			bodyLines = append(bodyLines, line)
+		}
+	}
+
+	to = headers["to"]
+	textFrom := headers["from"]
+	subject = headers["subject"]
+
+	if !strings.Contains(realSender, "@") {
+		fields := strings.Fields(realSender)
+		if len(fields) > 0 {
+			realSender = fields[0]
+		}
+		realSender = fmt.Sprintf("%s@%s", realSender, config.Server.Domain)
+	}
+
+	if strings.HasPrefix(realSender, "@") || realSender == "" {
+		if textFrom != "" {
+			if idx := strings.LastIndex(textFrom, "<"); idx != -1 && strings.HasSuffix(textFrom, ">") {
+				realSender = textFrom[idx+1 : len(textFrom)-1]
+			} else {
+				realSender = textFrom
+			}
+			log.Printf("Using From header as envelope sender: %s", realSender)
+		}
+	}
+
+	finalFrom := realSender
+	if textFrom != "" {
+		cleanName := strings.Trim(textFrom, "\"")
+		finalFrom = fmt.Sprintf("\"%s\" <%s>", cleanName, realSender)
+	}
+
+	return realSender, finalFrom, to, subject, headers, strings.Join(bodyLines, "\r\n")
 }
