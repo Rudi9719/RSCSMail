@@ -18,9 +18,6 @@ func parseAddress(addr string) (user, node string) {
 	if len(parts) > 1 {
 		node = parts[1]
 	}
-	if node == "" {
-		node = "UNKNOWN"
-	}
 	return
 }
 

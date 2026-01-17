@@ -238,8 +238,6 @@ func sendBounce(recipient, failedRcpt, reason string) error {
 	fmt.Fprintf(msg, "To: %s\r\n", recipient)
 	fmt.Fprintf(msg, "Subject: %s\r\n", subject)
 	fmt.Fprintf(msg, "Date: %s\r\n", timestamp)
-	fmt.Fprintf(msg, "MIME-Version: 1.0\r\n")
-	fmt.Fprintf(msg, "Content-Type: text/plain; charset=utf-8\r\n")
 	fmt.Fprintf(msg, "\r\n")
 	fmt.Fprintf(msg, "This is the RSCS/SMTP Gateway at %s.\r\n\r\n", config.Server.Domain)
 	fmt.Fprintf(msg, "I wasn't able to deliver your message to the following addresses.\r\n")
@@ -467,7 +465,7 @@ func parseSpoolData(content []byte, receiveOutput string, rscsSender string) (en
 				switch key {
 				case "to", "toa":
 					upperVal := strings.ToUpper(val)
-					if strings.Contains(upperVal, "SMTP") && strings.Contains(upperVal, "--PUBNET") {
+					if strings.Contains(upperVal, "SMTP") && strings.Contains(upperVal, "PUBNET") {
 						continue
 					}
 					headers["to"] = val

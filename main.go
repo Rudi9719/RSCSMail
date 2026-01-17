@@ -193,7 +193,7 @@ func main() {
 	}
 
 	if err := ensureDKIMKey("dkim_private.pem"); err != nil {
-		log.Printf("Warning: Failed to ensure DKIM key: %v", err)
+		log.Fatalf("Failed to ensure DKIM key: %v", err)
 	}
 	go StartSpoolMonitor()
 
@@ -207,7 +207,7 @@ func main() {
 	if config.Server.TLSCertFile != "" {
 		cert, err := tls.LoadX509KeyPair(config.Server.TLSCertFile, config.Server.TLSKeyFile)
 		if err != nil {
-			log.Printf("Warning: failed to load TLS certs: %v", err)
+			log.Fatalf("Failed to load TLS certs: %v", err)
 		} else {
 			s.TLSConfig = &tls.Config{Certificates: []tls.Certificate{cert}}
 		}
