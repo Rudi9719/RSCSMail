@@ -9,9 +9,9 @@ func TestParseAddress(t *testing.T) {
 		expectedNode string
 	}{
 		{"user@node", "user", "node"},
-		{"user", "user", "UNKNOWN"},
+		{"user", "user", ""},
 		{"user@node@extra", "user", "node"},
-		{"", "", "UNKNOWN"},
+		{"", "", ""},
 	}
 
 	for _, tt := range tests {
