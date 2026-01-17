@@ -57,11 +57,8 @@ func sendErrorNotification(failedRecipient, reason, disposition, savedPath strin
 		return
 	}
 
-	parts := strings.Split(config.Routing.ErrorRecipient, "@")
-	if len(parts) != 2 {
-		return
-	}
-	adminUser, adminNode := parts[0], parts[1]
+	adminUser := config.Routing.ErrorRecipient
+	adminNode := config.Routing.RSCSNode
 
 	errPath := filepath.Join(os.TempDir(), fmt.Sprintf("error_%d.txt", time.Now().UnixNano()))
 
@@ -84,10 +81,9 @@ func handleDispatch(recipient, filePath, cmsFn, cmsFt, subject string) {
 	}
 	user, domain := parts[0], parts[1]
 
-	rscsNodeConfig, ok := config.Routing.DomainMap[domain]
-	if !ok {
+	if !strings.EqualFold(domain, config.Server.Domain) {
 		action := strings.ToLower(config.Routing.DefaultAction)
-		reason := "domain not mapped"
+		reason := fmt.Sprintf("domain %s not configured (only %s supported)", domain, config.Server.Domain)
 
 		switch action {
 		case "save":
@@ -100,6 +96,8 @@ func handleDispatch(recipient, filePath, cmsFn, cmsFt, subject string) {
 		}
 		return
 	}
+	// We are good to go, target node is our configured node.
+	targetNode := config.Routing.RSCSNode
 
 	validUser := isValidCMSUser(user)
 
@@ -118,10 +116,7 @@ func handleDispatch(recipient, filePath, cmsFn, cmsFt, subject string) {
 		}
 		return
 	}
-
 	cmsUser := strings.ToUpper(user)
-	targetNode := rscsNodeConfig.Node
-
 	if err := sendOverNJE(cmsUser, targetNode, filePath, cmsFn, cmsFt, subject); err != nil {
 		log.Printf("nje error sending to %s@%s: %v", cmsUser, targetNode, err)
 	} else {

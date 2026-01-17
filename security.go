@@ -134,15 +134,14 @@ func signDKIM(msg []byte, from string) ([]byte, error) {
 		domain = parts[1]
 	}
 
-	dmConfig, ok := config.Routing.DomainMap[domain]
-	if !ok || dmConfig.DkimKeyPath == "" {
-		dmConfig.DkimKeyPath = "dkim_private.pem"
-		dmConfig.DkimSelector = "default"
+	dkimKeyPath := config.Routing.DkimKeyPath
+	if dkimKeyPath == "" {
+		dkimKeyPath = "dkim_private.pem"
 	}
 
-	keyData, err := os.ReadFile(dmConfig.DkimKeyPath)
+	keyData, err := os.ReadFile(dkimKeyPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read DKIM key from %s: %v", dmConfig.DkimKeyPath, err)
+		return nil, fmt.Errorf("failed to read DKIM key from %s: %v", dkimKeyPath, err)
 	}
 
 	block, _ := pem.Decode(keyData)
@@ -155,7 +154,7 @@ func signDKIM(msg []byte, from string) ([]byte, error) {
 		return nil, err
 	}
 
-	selector := dmConfig.DkimSelector
+	selector := config.Routing.DkimSelector
 	if selector == "" {
 		selector = "default"
 	}

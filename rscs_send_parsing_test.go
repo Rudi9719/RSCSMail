@@ -13,7 +13,9 @@ func TestParseSpoolData(t *testing.T) {
 			Domain: "example.org",
 		},
 		Routing: RoutingConfig{
-			DomainMap: make(map[string]DomainConfig),
+			RSCSNode:     "EXAMPLE",
+			SMTPNode:     "SMTP",
+			DkimSelector: "default",
 		},
 	}
 
@@ -33,7 +35,7 @@ func TestParseSpoolData(t *testing.T) {
 				"Subject: Test\r\n\r\n" +
 				"Body content",
 			receiveOutput:  "",
-			expectedSender: "testuser@example.com",
+			expectedSender: "testuser@example.org",
 			expectedDate:   "17 Jan 2026 01:10:06 GMT",
 		},
 		{
@@ -53,7 +55,7 @@ func TestParseSpoolData(t *testing.T) {
 				"From: TestUser <testuser@example.com>\r\n" +
 				"To: test@example.com\r\n\r\n",
 			receiveOutput:  "",
-			expectedSender: "testuser@example.com",
+			expectedSender: "testuser@example.org",
 			expectedDate:   "17 January 26, 01:10:06 GMT",
 		},
 		{
@@ -62,7 +64,7 @@ func TestParseSpoolData(t *testing.T) {
 				"To: test@example.com\r\n\r\n",
 			receiveOutput:  "File ... from SOMEUSER ...",
 			rscsSender:     "authoritative@example.com",
-			expectedSender: "authoritative@example.com",
+			expectedSender: "authoritative@example.org",
 			expectedDate:   "",
 		},
 	}

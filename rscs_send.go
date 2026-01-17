@@ -88,26 +88,17 @@ func parseRSCSHeaders(r io.Reader) (map[string]string, error) {
 }
 
 func resolveNode(domain string) string {
-	if conf, ok := config.Routing.DomainMap[domain]; ok {
-		return conf.Node
-	}
-	for d, conf := range config.Routing.DomainMap {
-		if strings.EqualFold(d, domain) {
-			return conf.Node
-		}
+	if strings.EqualFold(domain, config.Server.Domain) {
+		return config.Routing.RSCSNode
 	}
 	return ""
 }
 
 func resolveSender(user, node string) string {
-	domain := config.Server.Domain
-	for d, conf := range config.Routing.DomainMap {
-		if strings.EqualFold(conf.Node, node) {
-			domain = d
-			break
-		}
+	if strings.EqualFold(config.Routing.RSCSNode, node) {
+		return fmt.Sprintf("%s@%s", strings.ToLower(user), config.Server.Domain)
 	}
-	return fmt.Sprintf("%s@%s", strings.ToLower(user), domain)
+	return fmt.Sprintf("%s@%s", strings.ToLower(user), config.Server.Domain)
 }
 
 func processSpoolFile(path string) {
@@ -142,16 +133,6 @@ func processSpoolFile(path string) {
 		log.Printf("Failed to execute receive for %s: %v. Output: %s", path, err, string(out))
 		return
 	}
-
-	defer func() {
-		ackCmd := exec.Command("sudo", "-u", "smtp", receiveCmd, "-o", "/dev/null", path)
-		if out, err := ackCmd.CombinedOutput(); err != nil {
-			log.Printf("Warning: failed to ack/delete spool file %s: %v. Out: %s", path, err, string(out))
-			os.Remove(path)
-		} else {
-			log.Printf("Successfully processed (and cleaned up) %s", path)
-		}
-	}()
 
 	content, err := os.ReadFile(tempFile)
 	if err != nil {
@@ -249,8 +230,6 @@ func processSpoolFile(path string) {
 			log.Printf("Failed to send bounce notification: %v", bounceErr)
 		}
 	}
-
-	// Cleanup handled by defer
 }
 
 func sendBounce(recipient, failedRcpt, reason string) error {
@@ -444,7 +423,6 @@ func parseSpoolData(content []byte, receiveOutput string, rscsSender string) (en
 	scanner := bufio.NewScanner(bytes.NewReader(content))
 	parsingHeaders := true
 	var receiveSender string
-
 	if rscsSender != "" {
 		receiveSender = rscsSender
 	} else if receiveOutput != "" {
@@ -453,19 +431,7 @@ func parseSpoolData(content []byte, receiveOutput string, rscsSender string) (en
 			if strings.ToLower(w) == "from" && i+2 < len(words) {
 				if strings.ToLower(words[i+2]) == "at" {
 					candidateUser := words[i+1]
-					candidateNode := words[i+3]
-					var domain string
-					for d, conf := range config.Routing.DomainMap {
-						if strings.EqualFold(conf.Node, candidateNode) {
-							domain = d
-							break
-						}
-					}
-					if domain == "" {
-						domain = config.Server.Domain
-					}
-
-					receiveSender = fmt.Sprintf("%s@%s", candidateUser, domain)
+					receiveSender = fmt.Sprintf("%s@%s", candidateUser, config.Server.Domain)
 					log.Printf("Identified envelope sender from receive: %s", receiveSender)
 					break
 				}
@@ -496,13 +462,18 @@ func parseSpoolData(content []byte, receiveOutput string, rscsSender string) (en
 				key := strings.ToLower(strings.TrimFunc(rawKey, func(r rune) bool {
 					return !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9'))
 				}))
+				if len(key) > 7 {
+					continue
+				}
 
 				val := strings.TrimSpace(line[idx+1:])
 
 				switch key {
 				case "to", "toa":
 					upperVal := strings.ToUpper(val)
-					if strings.Contains(upperVal, "SMTP") && strings.Contains(upperVal, "PUBNET") {
+					if strings.Contains(upperVal, config.NJE.RunAsUser) &&
+						strings.Contains(upperVal, config.Routing.SMTPNode) ||
+						strings.Contains(upperVal, strings.ToUpper(config.Server.Domain)) {
 						continue
 					}
 					headers["to"] = val
@@ -527,7 +498,7 @@ func parseSpoolData(content []byte, receiveOutput string, rscsSender string) (en
 			}
 
 			parsingHeaders = false
-			if strings.HasPrefix(line, "[PUBVM") {
+			if strings.HasPrefix(line, fmt.Sprintf("[%s", config.Routing.RSCSNode)) {
 				break
 			}
 			if isGarbage(line) {
@@ -535,7 +506,7 @@ func parseSpoolData(content []byte, receiveOutput string, rscsSender string) (en
 			}
 			bodyLines = append(bodyLines, line)
 		} else {
-			if strings.HasPrefix(line, "[PUBVM") {
+			if strings.HasPrefix(line, fmt.Sprintf("[%s", config.Routing.RSCSNode)) {
 				break
 			}
 			if isGarbage(line) {
@@ -549,14 +520,6 @@ func parseSpoolData(content []byte, receiveOutput string, rscsSender string) (en
 	textFrom := headers["from"]
 	subject = headers["subject"]
 
-	if !strings.Contains(realSender, "@") {
-		fields := strings.Fields(realSender)
-		if len(fields) > 0 {
-			realSender = fields[0]
-		}
-		realSender = fmt.Sprintf("%s@%s", realSender, config.Server.Domain)
-	}
-
 	if strings.HasPrefix(realSender, "@") || realSender == "" {
 		if textFrom != "" {
 			if idx := strings.LastIndex(textFrom, "<"); idx != -1 && strings.HasSuffix(textFrom, ">") {
@@ -565,6 +528,14 @@ func parseSpoolData(content []byte, receiveOutput string, rscsSender string) (en
 				realSender = textFrom
 			}
 			log.Printf("Using From header as envelope sender: %s", realSender)
+		}
+	}
+
+	if strings.Contains(realSender, "@") {
+		parts := strings.Split(realSender, "@")
+		if len(parts) == 2 && !strings.EqualFold(parts[1], config.Server.Domain) {
+			log.Printf("Rewriting sender domain %s to %s", parts[1], config.Server.Domain)
+			realSender = fmt.Sprintf("%s@%s", parts[0], config.Server.Domain)
 		}
 	}
 

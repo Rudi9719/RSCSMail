@@ -56,16 +56,14 @@ func (s *Session) Rcpt(to string, opts *smtp.RcptOptions) error {
 	}
 	domain := parts[1]
 
-	domainConfig, ok := config.Routing.DomainMap[domain]
-	if !ok {
-		log.Printf("Skipping %s: no route for domain %s (From: %s)", to, domain, s.From)
+	if !strings.EqualFold(domain, config.Server.Domain) {
+		log.Printf("Skipping %s: domain mismatch (expected %s) (From: %s via %s)", to, config.Server.Domain, s.From,
+			s.Conn.RemoteAddr().String())
 		return &smtp.SMTPError{
 			Code:    550,
 			Message: "Relay access denied",
 		}
 	}
-	_ = domainConfig
-
 	s.To = append(s.To, to)
 	return nil
 }

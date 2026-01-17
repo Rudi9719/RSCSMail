@@ -40,19 +40,15 @@ type NJEConfig struct {
 	Form         string `toml:"form"`
 }
 
-// DomainConfig defines settings for a specific domain in routing.
-type DomainConfig struct {
-	Node         string `toml:"node"`
-	DkimKeyPath  string `toml:"dkim_key_path"`
-	DkimSelector string `toml:"dkim_selector"`
-}
-
 // RoutingConfig defines how emails are mapped to NJE nodes and users.
 type RoutingConfig struct {
-	DefaultAction  string                  `toml:"default_action"`
-	ErrorRecipient string                  `toml:"error_recipient"`
-	NJESender      string                  `toml:"nje_sender"`
-	DomainMap      map[string]DomainConfig `toml:"domain_map"`
+	DefaultAction  string `toml:"default_action"`
+	ErrorRecipient string `toml:"error_recipient"`
+	NJESender      string `toml:"nje_sender"`
+	RSCSNode       string `toml:"rscs_node"`
+	SMTPNode       string `toml:"smtp_node"`
+	DkimKeyPath    string `toml:"dkim_key_path"`
+	DkimSelector   string `toml:"dkim_selector"`
 }
 
 // Backend implements smtp.Backend.
