@@ -87,6 +87,18 @@ func parseRSCSHeaders(r io.Reader) (map[string]string, error) {
 	return headers, scanner.Err()
 }
 
+func resolveNode(domain string) string {
+	if conf, ok := config.Routing.DomainMap[domain]; ok {
+		return conf.Node
+	}
+	for d, conf := range config.Routing.DomainMap {
+		if strings.EqualFold(d, domain) {
+			return conf.Node
+		}
+	}
+	return ""
+}
+
 func resolveSender(user, node string) string {
 	domain := config.Server.Domain
 	for d, conf := range config.Routing.DomainMap {
@@ -130,6 +142,16 @@ func processSpoolFile(path string) {
 		log.Printf("Failed to execute receive for %s: %v. Output: %s", path, err, string(out))
 		return
 	}
+
+	defer func() {
+		ackCmd := exec.Command("sudo", "-u", "smtp", receiveCmd, "-o", "/dev/null", path)
+		if out, err := ackCmd.CombinedOutput(); err != nil {
+			log.Printf("Warning: failed to ack/delete spool file %s: %v. Out: %s", path, err, string(out))
+			os.Remove(path)
+		} else {
+			log.Printf("Successfully processed (and cleaned up) %s", path)
+		}
+	}()
 
 	content, err := os.ReadFile(tempFile)
 	if err != nil {
@@ -228,13 +250,7 @@ func processSpoolFile(path string) {
 		}
 	}
 
-	ackCmd := exec.Command("sudo", "-u", "smtp", receiveCmd, "-o", "/dev/null", path)
-	if out, err := ackCmd.CombinedOutput(); err != nil {
-		log.Printf("Warning: failed to ack/delete spool file %s: %v. Out: %s", path, err, string(out))
-		os.Remove(path)
-	} else {
-		log.Printf("Successfully processed (and cleaned up) %s", path)
-	}
+	// Cleanup handled by defer
 }
 
 func sendBounce(recipient, failedRcpt, reason string) error {
@@ -271,7 +287,18 @@ func sendBounce(recipient, failedRcpt, reason string) error {
 	node := ""
 	if idx := strings.LastIndex(recipient, "@"); idx != -1 {
 		user = recipient[:idx]
-		node = recipient[idx+1:]
+		domain := recipient[idx+1:]
+
+		if resolvedNode := resolveNode(domain); resolvedNode != "" {
+			node = resolvedNode
+		} else {
+			if !strings.Contains(domain, ".") && len(domain) <= 8 {
+				node = strings.ToUpper(domain)
+			} else {
+				log.Printf("Warning: could not resolve NJE node for domain %s", domain)
+				node = "UNKNOWN"
+			}
+		}
 	}
 
 	return sendOverNJE(user, node, tmpFile.Name(), "MAIL", "TXT", "Undeliverable Mail")
