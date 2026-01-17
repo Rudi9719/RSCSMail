@@ -188,7 +188,12 @@ func (s *Session) Data(r io.Reader) error {
 }
 
 func main() {
-	if _, err := toml.DecodeFile("config.toml", &config); err != nil {
+	args := os.Args[1:]
+	configPath := "config.toml"
+	if len(args) > 0 {
+		configPath = args[0]
+	}
+	if _, err := toml.DecodeFile(configPath, &config); err != nil {
 		log.Fatal(err)
 	}
 
