@@ -89,7 +89,34 @@ func processSpoolFile(path string) {
 	bodyLines := []string{}
 	scanner := bufio.NewScanner(bytes.NewReader(content))
 	parsingHeaders := true
-	var realSender string
+	var receiveSender string
+	if out != nil {
+		outStr := string(out)
+		words := strings.Fields(outStr)
+		for i, w := range words {
+			if strings.ToLower(w) == "from" && i+2 < len(words) {
+				if strings.ToLower(words[i+2]) == "at" {
+					candidateUser := words[i+1]
+					candidateNode := words[i+3]
+					var domain string
+					for d, conf := range config.Routing.DomainMap {
+						if strings.EqualFold(conf.Node, candidateNode) {
+							domain = d
+							break
+						}
+					}
+					if domain == "" {
+						domain = config.Server.Domain
+					}
+
+					receiveSender = fmt.Sprintf("%s@%s", candidateUser, domain)
+					log.Printf("Identified envelope sender from receive: %s", receiveSender)
+					break
+				}
+			}
+		}
+	}
+	var realSender = receiveSender
 
 	for scanner.Scan() {
 		line := scanner.Text()

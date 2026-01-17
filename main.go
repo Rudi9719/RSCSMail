@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/tls"
 	"fmt"
+	"html"
 	"io"
 	"log"
 	"mime"
@@ -134,13 +135,14 @@ func (s *Session) Data(r io.Reader) error {
 		ct := p.Header.Get("Content-Type")
 		mediaType, _, _ := mime.ParseMediaType(ct)
 
-		if mediaType == "text/plain" {
+		switch mediaType {
+		case "text/plain":
 			if _, err := io.Copy(&bodyBuf, p.Body); err != nil {
 				log.Printf("body read error: %v", err)
 			}
 			bodyBuf.WriteString("\n")
 			hasPlain = true
-		} else if mediaType == "text/html" {
+		case "text/html":
 			if _, err := io.Copy(&htmlBuf, p.Body); err != nil {
 				log.Printf("html body read error: %v", err)
 			}
@@ -150,7 +152,15 @@ func (s *Session) Data(r io.Reader) error {
 
 	if !hasPlain && htmlBuf.Len() > 0 {
 		htmlStr := htmlBuf.String()
-		htmlStr = htmlLinkRegex.ReplaceAllString(htmlStr, "$2 ($1)")
+		htmlStr = htmlLinkRegex.ReplaceAllStringFunc(htmlStr, func(match string) string {
+			parts := htmlLinkRegex.FindStringSubmatch(match)
+			if len(parts) >= 3 {
+				url := html.UnescapeString(parts[1])
+				text := parts[2]
+				return fmt.Sprintf("%s (%s)", text, url)
+			}
+			return match
+		})
 		stripped := htmlTagRegex.ReplaceAllString(htmlStr, "")
 		bodyBuf.WriteString(stripped)
 	}
