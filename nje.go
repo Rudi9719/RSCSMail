@@ -46,12 +46,7 @@ func isValidCMSUser(user string) bool {
 	if len(u) == 0 || len(u) > 8 {
 		return false
 	}
-	for _, r := range u {
-		if (r < 'a' || r > 'z') && (r < '0' || r > '9') {
-			return false
-		}
-	}
-	return true
+	return cmsUserRegex.MatchString(u)
 }
 
 func sendErrorNotification(failedRecipient, reason, disposition, savedPath string) {
@@ -73,10 +68,13 @@ func sendErrorNotification(failedRecipient, reason, disposition, savedPath strin
 	f.Close()
 
 	sendOverNJE(strings.ToUpper(adminUser), strings.ToUpper(adminNode), errPath, "ERROR", "LOG", "")
-	os.Remove(errPath)
+	if strings.ToLower(config.Routing.DefaultAction) == "delete" {
+		os.Remove(errPath)
+	}
 }
 
 func handleDispatch(recipient, filePath, cmsFn, cmsFt, subject string) {
+	action := strings.ToLower(config.Routing.DefaultAction)
 	parts := strings.Split(recipient, "@")
 	if len(parts) != 2 {
 		return
@@ -84,7 +82,6 @@ func handleDispatch(recipient, filePath, cmsFn, cmsFt, subject string) {
 	user, domain := parts[0], parts[1]
 
 	if !strings.EqualFold(domain, config.Server.Domain) {
-		action := strings.ToLower(config.Routing.DefaultAction)
 		reason := fmt.Sprintf("domain %s not configured (only %s supported)", domain, config.Server.Domain)
 
 		switch action {
@@ -98,12 +95,10 @@ func handleDispatch(recipient, filePath, cmsFn, cmsFt, subject string) {
 		}
 		return
 	}
-	targetNode := config.Routing.RSCSNode
 
 	validUser := isValidCMSUser(user)
 
 	if !validUser {
-		action := strings.ToLower(config.Routing.DefaultAction)
 		reason := fmt.Sprintf("invalid CMS userid (%s)", user)
 
 		switch action {
@@ -117,7 +112,10 @@ func handleDispatch(recipient, filePath, cmsFn, cmsFt, subject string) {
 		}
 		return
 	}
+
+	targetNode := config.Routing.RSCSNode
 	cmsUser := strings.ToUpper(user)
+
 	if err := sendOverNJE(cmsUser, targetNode, filePath, cmsFn, cmsFt, subject); err != nil {
 		log.Printf("nje error sending to %s@%s: %v", cmsUser, targetNode, err)
 	} else {
