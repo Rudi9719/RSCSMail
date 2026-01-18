@@ -207,12 +207,38 @@ func processSpoolFile(path string) {
 	}
 
 	if target == "" {
+		var wg sync.WaitGroup
+		var errMu sync.Mutex
+		var failedRecipients []string
+		domainRecipients := make(map[string][]string)
+
 		log.Printf("Relaying mail from %s to %d recipients via Direct MX", realSender, len(allRecipients))
 		for _, rcpt := range allRecipients {
-			if err := sendDirectMX(realSender, rcpt, signedMsg); err != nil {
-				log.Printf("Failed to send to %s via Direct MX: %v", rcpt, err)
-				sendErr = err
+			if idx := strings.LastIndex(rcpt, "@"); idx != -1 {
+				domain := strings.ToLower(rcpt[idx+1:])
+				domainRecipients[domain] = append(domainRecipients[domain], rcpt)
 			}
+		}
+
+		for domain, rcpts := range domainRecipients {
+			wg.Add(1)
+			go func(domain string, rcpts []string) {
+				defer wg.Done()
+				for _, rcpt := range rcpts {
+					if err := sendDirectMX(realSender, rcpt, signedMsg); err != nil {
+						log.Printf("Failed to send to %s via Direct MX: %v", rcpt, err)
+						errMu.Lock()
+						failedRecipients = append(failedRecipients, rcpt)
+						sendErr = err
+						errMu.Unlock()
+					}
+				}
+			}(domain, rcpts)
+		}
+		wg.Wait()
+
+		if len(failedRecipients) > 0 {
+			log.Printf("Failed to deliver to %d recipients: %v", len(failedRecipients), failedRecipients)
 		}
 	} else {
 		log.Printf("Relaying mail from %s to %v via %s", realSender, allRecipients, target)
