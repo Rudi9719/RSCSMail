@@ -26,7 +26,7 @@ This project only uses the native Go build tools, and allows an optional config.
 
 ```bash
   go build
-  ./rscsmail /path/to/config.toml
+  ./rscsmail (/path/to/config.toml)
 ```
 
 **Ensure your config.toml is set up for your domain before launching!**
