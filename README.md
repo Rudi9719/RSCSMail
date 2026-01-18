@@ -3,32 +3,34 @@
 
 This was an attempt to funnel SMTP into RSCS for reading with PROFS on vintage systems that expanded
 
-Currently it supports receiving mail for multiple domains to nodes defined in the config and available via RSCS
-
 Only tested with [nje-ii](https://github.com/HackerSmacker/nje-ii) RSCS and PUBVM. 
-**Ensure NJE-II is working and able to communicate with your RSCS node before building this project!**
+**Ensure NJE-II is working on your SMTP NODE and able to communicate with your RSCS node first!**
 **Ensure your DNS records are set up for your domain before running this project!**
+
 
 ## Features
 
-- Redirect internet email to RSCS nodes
-- Spam rejection based on domain, sender, recipient, and modern DMARC/DKIM/SPF
+- Redirect internet email to CMS via RSCS
+- Spam rejection using domain, sender, recipient, and modern DMARC/DKIM/SPF features
 - Listens to a configureable nje-ii user spool for relaying RSCS notes to internet
-- Only relay mail from RSCS **not** the internet
+- Only relay mail from the RSCS node **not** the internet
 - Auto generation of DKIM key if domain is missing one
 - Display of Domain to DKIM DNS Record mapping
 - DKIM Signing of outbound mail
+- Mail bounce notifications
+- Support for IBM PROFS in 2025
 
 
 ## Deployment
-This project only uses the native Go build tools:
+This project only uses the native Go build tools, and allows an optional config.toml to be specified.
 
 ```bash
   go build
-  ./rscsmail
+  ./rscsmail /path/to/config.toml
 ```
 
 **Ensure your config.toml is set up for your domain before launching!**
+**The NJE-ii run as user must exist locally on the SMTP node** 
 
 ## Sending a note to email
 To send a note to email you must spool it to your configured nje-ii node and SMTP user.
@@ -47,7 +49,12 @@ For example PUBVM uses SMTP@PUBNET for RSCS Mail. I will show you how this invoc
  - From (Optional, will be generated however accepts an author per [RFC 5322](https://datatracker.ietf.org/doc/html/rfc5322#appendix-A.1.2))
  - Subject (Optional, just type Subject: for CMS Notes on a new line)
  - To (Required, RSCS Mail will ignore the to user for SMTP, so you need a To: line with an internet address)
+   - Multiline is supported, if you need more room simply begin a new line with To: and continue
+   - Currently to use PROFS "reply" you must re-specify To: in the body like a new email
+ - CC (Optional, just type CC: and your recipients - multiline is supported)
+ - BCC (Optional, just type BCC: and your recipients - multiline is supported)
  - Body (Required, just type your message!)
+
 ## License
 
 [WTFPL](https://choosealicense.com/licenses/wtfpl/)
@@ -63,6 +70,7 @@ This project is used by the following:
 ## Support
 
 No
+
 
 ## Acknowledgements
 

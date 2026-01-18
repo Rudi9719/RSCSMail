@@ -267,30 +267,28 @@ func processSpoolFile(path string) {
 }
 
 func sendBounce(recipient, failedRcpt, reason string) error {
-	bounceSender := fmt.Sprintf("MAILER-DAEMON@%s", config.Server.Domain)
+	bounceSender := fmt.Sprintf("%s@%s", config.NJE.RunAsUser, config.Server.Domain)
 	subject := fmt.Sprintf("Undeliverable: Mail to %s", failedRcpt)
 
-	timestamp := time.Now().Format(time.RFC1123Z)
+	bodyBuf := &bytes.Buffer{}
+	fmt.Fprintf(bodyBuf, "This is RSCS Mail Gateway for %s.\n\n", config.Server.Domain)
+	fmt.Fprintf(bodyBuf, "Your message could not be delivered to the following addresses.\n")
+	fmt.Fprintf(bodyBuf, "This is a permanent error.\n\n")
+	fmt.Fprintf(bodyBuf, "<%s>:\n", failedRcpt)
+	fmt.Fprintf(bodyBuf, "%s\n", reason)
 
-	msg := &bytes.Buffer{}
-	fmt.Fprintf(msg, "From: %s\r\n", bounceSender)
-	fmt.Fprintf(msg, "To: %s\r\n", recipient)
-	fmt.Fprintf(msg, "Subject: %s\r\n", subject)
-	fmt.Fprintf(msg, "Date: %s\r\n", timestamp)
-	fmt.Fprintf(msg, "\r\n")
-	fmt.Fprintf(msg, "This is the RSCS/SMTP Gateway at %s.\r\n\r\n", config.Server.Domain)
-	fmt.Fprintf(msg, "I wasn't able to deliver your message to the following addresses.\r\n")
-	fmt.Fprintf(msg, "This is a permanent error.\r\n\r\n")
-	fmt.Fprintf(msg, "<%s>:\r\n", failedRcpt)
-	fmt.Fprintf(msg, "%s\r\n", reason)
+	ebcdicBuf, err := generateEbcdicNote(bounceSender, []string{recipient}, subject, bounceSender, bodyBuf, time.Now())
+	if err != nil {
+		return fmt.Errorf("failed to generate EBCDIC bounce: %v", err)
+	}
 
-	tmpFile, err := os.CreateTemp("", "bounce-*.txt")
+	tmpFile, err := os.CreateTemp("", "bounce-*.bin")
 	if err != nil {
 		return fmt.Errorf("failed to create temp file for bounce: %v", err)
 	}
 	defer os.Remove(tmpFile.Name())
 
-	if _, err := tmpFile.Write(msg.Bytes()); err != nil {
+	if _, err := tmpFile.Write(ebcdicBuf.Bytes()); err != nil {
 		tmpFile.Close()
 		return fmt.Errorf("failed to write bounce content: %v", err)
 	}
@@ -314,7 +312,7 @@ func sendBounce(recipient, failedRcpt, reason string) error {
 		}
 	}
 
-	return sendOverNJE(user, node, tmpFile.Name(), "MAIL", "TXT", "Undeliverable Mail")
+	return sendOverNJE(user, node, tmpFile.Name(), "MAIL", "BOUNCE", subject)
 }
 
 func sendMail(addr string, auth smtp.Auth, from string, to []string, msg []byte, skipVerify bool) error {
