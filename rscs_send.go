@@ -565,7 +565,6 @@ func parseSpoolData(content []byte, receiveOutput string, rscsSender string) (en
 			if isGarbage(line) {
 				continue
 			}
-			// Check for late headers in body (PROFS compatibility)
 			if idx := strings.Index(line, ":"); idx > 0 && idx < 15 {
 				key := strings.ToLower(strings.TrimSpace(line[:idx]))
 				val := strings.TrimSpace(line[idx+1:])

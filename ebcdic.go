@@ -144,6 +144,17 @@ func generateEbcdicNote(from string, to []string, subject, fullSender string, bo
 		return nil, err
 	}
 
+	// Add PROFS subject trailer record
+	if subject != "" {
+		subjectBytes := subject
+		if len(subjectBytes) > 70 {
+			subjectBytes = subjectBytes[:70]
+		}
+		subjectLen := byte(len(subjectBytes))
+		trailerControl := []byte{0xFF, 0xFF, 0x02, 0x43, 0x00, subjectLen}
+		writeEbcdicRecord(ebcdicBuf, trailerControl, subjectBytes)
+	}
+
 	result := new(bytes.Buffer)
 	result.Write(ebcdicBuf.Bytes())
 	ebcdicBufPool.Put(ebcdicBuf)

@@ -106,6 +106,24 @@ func (s *Session) Data(r io.Reader) error {
 			fromHeader = addr.Address
 		}
 	}
+
+	emailTime := time.Now()
+	if dateHeader := mr.Header.Get("Date"); dateHeader != "" {
+		formats := []string{
+			time.RFC1123Z,
+			time.RFC1123,
+			"Mon, 2 Jan 2006 15:04:05 -0700",
+			"Mon, 2 Jan 2006 15:04:05 MST",
+			"2 Jan 2006 15:04:05 -0700",
+		}
+		for _, format := range formats {
+			if parsed, err := time.Parse(format, dateHeader); err == nil {
+				emailTime = parsed
+				break
+			}
+		}
+	}
+
 	var bodyBuf bytes.Buffer
 	var htmlBuf bytes.Buffer
 	hasPlain := false
@@ -164,7 +182,7 @@ func (s *Session) Data(r io.Reader) error {
 		bodyBuf.WriteString(stripped)
 	}
 
-	ebcdicBuf, err := generateEbcdicNote(s.From, s.To, subject, fromHeader, &bodyBuf, time.Now())
+	ebcdicBuf, err := generateEbcdicNote(s.From, s.To, subject, fromHeader, &bodyBuf, emailTime)
 	if err != nil {
 		log.Printf("ebcdic generation error: %v", err)
 		return err
