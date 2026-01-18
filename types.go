@@ -63,3 +63,17 @@ type Session struct {
 	HelloName  string
 	Conn       net.Conn
 }
+
+// Attachment struct to hold extracted attachments
+type Attachment struct {
+	Filename string
+	Data     []byte
+}
+
+// AttachmentInfo struct to hold attachment info
+type AttachmentInfo struct {
+	Filename string
+	Data     []byte
+	Fn       string
+	Ft       string
+}

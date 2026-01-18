@@ -83,5 +83,6 @@ No
  - [BurntSishi/toml ](github.com/BurntSushi/toml)
  - [Emersion's Go Packages](https://github.com/emersion)
  - [Mileusna's SPF Go Package](https://github.com/mileusna/spf)
+ - [fsnotify](https://github.com/fsnotify/fsnotify)
  - [MX Toolbox for Debugging](https://mxtoolbox.com)
  - [This guy's overview](https://stackoverflow.com/questions/9427013/send-email-using-telnet/79698345#79698345)

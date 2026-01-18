@@ -39,6 +39,70 @@ func deriveNJEFilename(email string) (fn, ft string) {
 	return
 }
 
+func deriveCMSShortNames(filenames []string) []string {
+	clean := func(s string) string {
+		return cmsUserRegex.ReplaceAllString(strings.ToUpper(s), "")
+	}
+
+	collisionSuffix := func(index int) string {
+		if index <= 0 {
+			return ""
+		}
+		if index <= 0x0F {
+			return fmt.Sprintf("-%X", index)
+		}
+		if index <= 0xFF {
+			return fmt.Sprintf("%02X", index)
+		}
+		return fmt.Sprintf("%X", index)
+	}
+
+	type nameInfo struct {
+		baseName  string
+		extension string
+	}
+	infos := make([]nameInfo, len(filenames))
+	baseCount := make(map[string]int)
+
+	for i, filename := range filenames {
+		ext := filepath.Ext(filename)
+		base := strings.TrimSuffix(filename, ext)
+		cleanBase := clean(base)
+		if cleanBase == "" {
+			cleanBase = "FILE"
+		}
+		infos[i] = nameInfo{baseName: cleanBase, extension: ext}
+		baseCount[cleanBase]++
+	}
+
+	result := make([]string, len(filenames))
+	baseIndex := make(map[string]int)
+
+	for i, info := range infos {
+		count := baseCount[info.baseName]
+
+		if count == 1 {
+			shortName := info.baseName
+			if len(shortName) > 8 {
+				shortName = shortName[:8]
+			}
+			result[i] = shortName
+		} else {
+			baseIndex[info.baseName]++
+			idx := baseIndex[info.baseName]
+			suffix := collisionSuffix(idx)
+
+			shortBase := info.baseName
+			if len(shortBase) > 6 {
+				shortBase = shortBase[:6]
+			}
+			result[i] = shortBase + suffix
+		}
+	}
+
+	return result
+}
+
 func isValidCMSUser(user string) bool {
 	u := strings.ToLower(user)
 	if u == "root" || u == "operator" || u == "system" || strings.HasPrefix(u, "guest") {

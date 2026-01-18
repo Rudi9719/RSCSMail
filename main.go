@@ -82,6 +82,13 @@ func (s *Session) Logout() error {
 
 // Data parses the email, formatting it as an EBCDIC PUNCH file.
 func (s *Session) Data(r io.Reader) error {
+	emailTime := time.Now()
+	var bodyBuf bytes.Buffer
+	var htmlBuf bytes.Buffer
+	var attachments []Attachment
+	var attachInfos []AttachmentInfo
+	hasPlain := false
+
 	// Read entire message for security checks and parsing
 	msgBytes, err := io.ReadAll(r)
 	if err != nil {
@@ -107,7 +114,6 @@ func (s *Session) Data(r io.Reader) error {
 		}
 	}
 
-	emailTime := time.Now()
 	if dateHeader := mr.Header.Get("Date"); dateHeader != "" {
 		formats := []string{
 			time.RFC1123Z,
@@ -124,18 +130,14 @@ func (s *Session) Data(r io.Reader) error {
 		}
 	}
 
-	var bodyBuf bytes.Buffer
-	var htmlBuf bytes.Buffer
-	hasPlain := false
-
 	if !pass {
-		banner := "********************************************************************************\n" +
+		banner := "*****************************************************************************\n" +
 			"*                                                                              *\n" +
 			"*                     WARNING: SENDER IDENTITY UNVERIFIED                      *\n" +
 			"*                                                                              *\n" +
-			fmt.Sprintf("* Reason: %-60s *\n", reason) +
+			fmt.Sprintf("* Reason: %-55s *\n", reason) +
 			"*                                                                              *\n" +
-			"********************************************************************************\n"
+			"*****************************************************************************\n"
 		bodyBuf.WriteString(banner)
 	}
 
@@ -150,7 +152,7 @@ func (s *Session) Data(r io.Reader) error {
 		}
 
 		ct := p.Header.Get("Content-Type")
-		mediaType, _, _ := mime.ParseMediaType(ct)
+		mediaType, ctParams, _ := mime.ParseMediaType(ct)
 
 		switch mediaType {
 		case "text/plain":
@@ -164,6 +166,32 @@ func (s *Session) Data(r io.Reader) error {
 				log.Printf("html body read error: %v", err)
 			}
 			htmlBuf.WriteString("\n")
+		case "multipart/alternative", "multipart/mixed", "multipart/related":
+		default:
+			_, dispParams, _ := mime.ParseMediaType(p.Header.Get("Content-Disposition"))
+			filename := dispParams["filename"]
+			if filename == "" {
+				filename = ctParams["name"]
+			}
+			if filename == "" {
+				parts := strings.Split(mediaType, "/")
+				if len(parts) == 2 {
+					filename = "attach." + parts[1]
+				} else {
+					filename = "attach.bin"
+				}
+			}
+
+			data, err := io.ReadAll(p.Body)
+			if err != nil {
+				log.Printf("Attachment read error for %s: %v", filename, err)
+				continue
+			}
+
+			if len(data) > 0 {
+				attachments = append(attachments, Attachment{Filename: filename, Data: data})
+				log.Printf("Extracted attachment: %s (%d bytes)", filename, len(data))
+			}
 		}
 	}
 
@@ -180,6 +208,45 @@ func (s *Session) Data(r io.Reader) error {
 		})
 		stripped := htmlTagRegex.ReplaceAllString(htmlStr, "")
 		bodyBuf.WriteString(stripped)
+	}
+
+	// Derive DOS 8.3 style short names for all attachments
+	filenames := make([]string, len(attachments))
+	for i, attach := range attachments {
+		filenames[i] = attach.Filename
+	}
+	shortNames := deriveCMSShortNames(filenames)
+
+	for i, attach := range attachments {
+		attachFn := shortNames[i]
+
+		ext := strings.TrimPrefix(filepath.Ext(attach.Filename), ".")
+		if ext == "" {
+			ext = "BIN"
+		}
+		attachFt := strings.ToUpper(cmsUserRegex.ReplaceAllString(ext, ""))
+		if len(attachFt) > 8 {
+			attachFt = attachFt[:8]
+		}
+		if attachFt == "" {
+			attachFt = "BIN"
+		}
+
+		attachInfos = append(attachInfos, AttachmentInfo{
+			Filename: attach.Filename,
+			Data:     attach.Data,
+			Fn:       attachFn,
+			Ft:       attachFt,
+		})
+	}
+
+	if len(attachInfos) > 0 {
+		bodyBuf.WriteString("\n")
+		bodyBuf.WriteString("********************************************************************************\n")
+		bodyBuf.WriteString("ATTACHMENTS:\n")
+		for _, info := range attachInfos {
+			bodyBuf.WriteString(fmt.Sprintf("  %8s %s was %s\n", info.Fn, info.Ft, info.Filename))
+		}
 	}
 
 	ebcdicBuf, err := generateEbcdicNote(s.From, s.To, subject, fromHeader, &bodyBuf, emailTime)
@@ -199,7 +266,21 @@ func (s *Session) Data(r io.Reader) error {
 	for _, recipient := range s.To {
 		handleDispatch(recipient, tmpPath, fn, ft, subject)
 	}
-	os.Remove(tmpPath)
+	defer os.Remove(tmpPath)
+
+	for _, info := range attachInfos {
+		attachPath := filepath.Join(os.TempDir(), fmt.Sprintf("ATTACH_%d.bin", time.Now().UnixNano()))
+		if err := os.WriteFile(attachPath, info.Data, 0644); err != nil {
+			log.Printf("failed to write attachment file: %v", err)
+			continue
+		}
+
+		attachSubject := fmt.Sprintf("Attachment: %s", info.Filename)
+		for _, recipient := range s.To {
+			handleDispatch(recipient, attachPath, info.Fn, info.Ft, attachSubject)
+		}
+		go os.Remove(attachPath)
+	}
 
 	return nil
 }

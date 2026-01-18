@@ -6,8 +6,9 @@ tls_key_file = "/etc/letsencrypt/live/"
 
 
 [nje]
-binary_path = "/usr/local/bin/punch"
+punch_path = "/usr/local/bin/punch"
 receive_path = "/usr/local/bin/receive"
+
 run_as_user = "smtp"
 distribution = "STANDARD" 
 class = "A"
