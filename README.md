@@ -3,7 +3,7 @@
 
 This was an attempt to funnel SMTP into RSCS for reading with PROFS on vintage systems that expanded
 
-Only tested with [nje-ii](https://github.com/HackerSmacker/nje-ii) RSCS and PUBVM. 
+Only tested with [nje-ii](https://github.com/HackerSmacker/nje-ii) RSCS.
 
 **Ensure NJE-II is working on your SMTP NODE and able to communicate with your RSCS node first!**
 
