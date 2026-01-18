@@ -181,11 +181,13 @@ func processSpoolFile(path string) {
 
 	seen := make(map[string]bool)
 	addRecipients := func(s string) {
-		for _, r := range strings.Split(s, ",") {
-			r = strings.TrimSpace(r)
-			if r != "" && !seen[r] {
-				allRecipients = append(allRecipients, r)
-				seen[r] = true
+		for _, part := range strings.Split(s, ",") {
+			for _, r := range strings.Fields(part) {
+				r = strings.TrimSpace(r)
+				if r != "" && strings.Contains(r, "@") && !seen[r] {
+					allRecipients = append(allRecipients, r)
+					seen[r] = true
+				}
 			}
 		}
 	}
@@ -423,6 +425,19 @@ func isGarbage(line string) bool {
 	return false
 }
 
+func normalizeAddresses(s string) string {
+	var addrs []string
+	for _, part := range strings.Split(s, ",") {
+		for _, addr := range strings.Fields(part) {
+			addr = strings.TrimSpace(addr)
+			if addr != "" && strings.Contains(addr, "@") {
+				addrs = append(addrs, addr)
+			}
+		}
+	}
+	return strings.Join(addrs, ", ")
+}
+
 func parseSpoolData(content []byte, receiveOutput string, rscsSender string) (envelopeSender, headerFrom, to, subject string, headers map[string]string, body string) {
 	var receiveSender string
 	var bodyBuilder strings.Builder
@@ -509,13 +524,28 @@ func parseSpoolData(content []byte, receiveOutput string, rscsSender string) (en
 						strings.Contains(upperVal, serverDomainUpper) {
 						continue
 					}
-					headers["to"] = val
+					normalized := normalizeAddresses(val)
+					if headers["to"] == "" {
+						headers["to"] = normalized
+					} else {
+						headers["to"] += ", " + normalized
+					}
 				case "from", "frm":
 					headers["from"] = val
 				case "cc":
-					headers["cc"] = val
+					normalized := normalizeAddresses(val)
+					if headers["cc"] == "" {
+						headers["cc"] = normalized
+					} else {
+						headers["cc"] += ", " + normalized
+					}
 				case "bcc":
-					headers["bcc"] = val
+					normalized := normalizeAddresses(val)
+					if headers["bcc"] == "" {
+						headers["bcc"] = normalized
+					} else {
+						headers["bcc"] += ", " + normalized
+					}
 				case "subject":
 					headers["subject"] = val
 				case "date":
@@ -540,8 +570,13 @@ func parseSpoolData(content []byte, receiveOutput string, rscsSender string) (en
 			if idx := strings.Index(line, ":"); idx > 0 && idx < 15 {
 				key := strings.ToLower(strings.TrimSpace(line[:idx]))
 				val := strings.TrimSpace(line[idx+1:])
-				if key == "to" && strings.Contains(val, "@") && headers["to"] == "" {
-					headers["to"] = val
+				if key == "to" && strings.Contains(val, "@") {
+					normalized := normalizeAddresses(val)
+					if headers["to"] == "" {
+						headers["to"] = normalized
+					} else {
+						headers["to"] += ", " + normalized
+					}
 					continue
 				}
 				if (key == "from" || key == "frm") && headers["from"] == "" {
@@ -550,6 +585,24 @@ func parseSpoolData(content []byte, receiveOutput string, rscsSender string) (en
 				}
 				if key == "subject" && headers["subject"] == "" {
 					headers["subject"] = val
+					continue
+				}
+				if key == "cc" && strings.Contains(val, "@") {
+					normalized := normalizeAddresses(val)
+					if headers["cc"] == "" {
+						headers["cc"] = normalized
+					} else {
+						headers["cc"] += ", " + normalized
+					}
+					continue
+				}
+				if key == "bcc" && strings.Contains(val, "@") {
+					normalized := normalizeAddresses(val)
+					if headers["bcc"] == "" {
+						headers["bcc"] = normalized
+					} else {
+						headers["bcc"] += ", " + normalized
+					}
 					continue
 				}
 			}
@@ -568,8 +621,13 @@ func parseSpoolData(content []byte, receiveOutput string, rscsSender string) (en
 			if idx := strings.Index(line, ":"); idx > 0 && idx < 15 {
 				key := strings.ToLower(strings.TrimSpace(line[:idx]))
 				val := strings.TrimSpace(line[idx+1:])
-				if key == "to" && strings.Contains(val, "@") && headers["to"] == "" {
-					headers["to"] = val
+				if key == "to" && strings.Contains(val, "@") {
+					normalized := normalizeAddresses(val)
+					if headers["to"] == "" {
+						headers["to"] = normalized
+					} else {
+						headers["to"] += ", " + normalized
+					}
 					continue
 				}
 				if (key == "from" || key == "frm") && headers["from"] == "" {
@@ -578,6 +636,24 @@ func parseSpoolData(content []byte, receiveOutput string, rscsSender string) (en
 				}
 				if key == "subject" && headers["subject"] == "" {
 					headers["subject"] = val
+					continue
+				}
+				if key == "cc" && strings.Contains(val, "@") {
+					normalized := normalizeAddresses(val)
+					if headers["cc"] == "" {
+						headers["cc"] = normalized
+					} else {
+						headers["cc"] += ", " + normalized
+					}
+					continue
+				}
+				if key == "bcc" && strings.Contains(val, "@") {
+					normalized := normalizeAddresses(val)
+					if headers["bcc"] == "" {
+						headers["bcc"] = normalized
+					} else {
+						headers["bcc"] += ", " + normalized
+					}
 					continue
 				}
 			}
