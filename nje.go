@@ -16,7 +16,8 @@ func parseAddress(addr string) (user, node string) {
 		user = parts[0]
 	}
 	if len(parts) > 1 {
-		node = parts[1]
+		domain_parts := strings.Split(parts[1], ".")
+		node = domain_parts[0]
 	}
 	return
 }
@@ -46,7 +47,7 @@ func isValidCMSUser(user string) bool {
 	if len(u) == 0 || len(u) > 8 {
 		return false
 	}
-	return cmsUserRegex.MatchString(u)
+	return !cmsUserRegex.MatchString(u)
 }
 
 func sendErrorNotification(failedRecipient, reason, disposition, savedPath string) {
