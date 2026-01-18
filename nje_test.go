@@ -28,10 +28,11 @@ func TestDeriveNJEFilename(t *testing.T) {
 		expectedFn string
 		expectedFt string
 	}{
-		{"user@node", "USER", "NOTE"},
-		{"longusername@node", "LONGUSER", "NOTE"},
-		{"short@node", "SHORT", "NOTE"},
-		{"@node", "NOTE", "NOTE"},
+		{"user@node.com", "USER", "NODE"},
+		{"longusername@node.com", "LONGUSER", "NODE"},
+		{"short@node.com", "SHORT", "NODE"},
+		{"us#er@no-de.com", "USER", "NODE"},
+		{"user@long-and-ugly-domain.com", "USER", "LONGANDU"},
 	}
 
 	for _, tt := range tests {

@@ -22,17 +22,19 @@ func parseAddress(addr string) (user, node string) {
 }
 
 func deriveNJEFilename(email string) (fn, ft string) {
-	user, _ := parseAddress(email)
+	user, node := parseAddress(email)
 
-	fn = strings.ToUpper(user)
-	if len(fn) > 8 {
-		fn = fn[:8]
-	}
-	if fn == "" || fn == "UNKNOWN" {
-		fn = "NOTE"
+	clean := func(s string) string {
+		res := cmsUserRegex.ReplaceAllString(strings.ToUpper(s), "")
+		if len(res) > 8 {
+			return res[:8]
+		}
+		return res
 	}
 
-	ft = "NOTE"
+	fn = clean(user)
+	ft = clean(node)
+
 	return
 }
 

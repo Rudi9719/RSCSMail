@@ -23,6 +23,7 @@ var (
 	config        Config
 	htmlTagRegex  = regexp.MustCompile("<[^>]*>")
 	htmlLinkRegex = regexp.MustCompile(`(?i)<a[^>]*href=["']([^"']*)["'][^>]*>((?s).*?)</a>`)
+	cmsUserRegex  = regexp.MustCompile(`[^a-zA-Z0-9]+`)
 )
 
 // NewSession creates a new SMTP session.
@@ -210,6 +211,7 @@ func main() {
 
 	go ensureDMARCRecord()
 	go ensureSPFRecord()
+
 	if config.Spool.Directory != "" {
 		go StartSpoolMonitor()
 	}
@@ -230,7 +232,7 @@ func main() {
 		}
 	}
 
-	log.Printf("nje-gateway listening on %s (EHLO %s)", s.Addr, s.Domain)
+	log.Printf("RSCS Mail is listening on %s (EHLO %s)", s.Addr, s.Domain)
 	if err := s.ListenAndServe(); err != nil {
 		log.Fatalf("Server exited with error: %v", err)
 	}
