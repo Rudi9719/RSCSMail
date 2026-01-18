@@ -1,6 +1,8 @@
 
 # RSCS Mail
 ![Build Status](https://github.com/Rudi9719/RSCSMail/actions/workflows/go.yml/badge.svg)
+[![Go Reference](https://pkg.go.dev/badge/github.com/Rudi9719/RSCSMail.svg)](https://pkg.go.dev/github.com/Rudi9719/RSCSMail)
+
 
 This was an attempt to funnel SMTP into RSCS for reading with PROFS on vintage systems that expanded
 
