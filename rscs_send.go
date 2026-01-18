@@ -230,6 +230,12 @@ func processSpoolFile(path string) {
 			log.Printf("Failed to send bounce notification: %v", bounceErr)
 		}
 	}
+
+	if err := os.Remove(path); err != nil {
+		log.Printf("Warning: failed to remove spool file %s: %v", path, err)
+	} else {
+		log.Printf("Removed processed spool file: %s", path)
+	}
 }
 
 func sendBounce(recipient, failedRcpt, reason string) error {
@@ -418,18 +424,31 @@ func isGarbage(line string) bool {
 }
 
 func parseSpoolData(content []byte, receiveOutput string, rscsSender string) (envelopeSender, headerFrom, to, subject string, headers map[string]string, body string) {
+	var receiveSender string
+	var bodyBuilder strings.Builder
 	headers = make(map[string]string)
-	bodyLines := []string{}
+	bodyBuilder.Grow(len(content))
 	scanner := bufio.NewScanner(bytes.NewReader(content))
 	parsingHeaders := true
-	var receiveSender string
+	firstBodyLine := true
+	serverDomainUpper := strings.ToUpper(config.Server.Domain)
+	runAsUserUpper := strings.ToUpper(config.NJE.RunAsUser)
+	smtpNodeUpper := strings.ToUpper(config.Routing.SMTPNode)
+	rscsNodeUpper := strings.ToUpper(config.Routing.RSCSNode)
+
+	rscsNodePrefix := fmt.Sprintf("[%s", rscsNodeUpper)
+
 	if rscsSender != "" {
 		receiveSender = rscsSender
 	} else if receiveOutput != "" {
 		words := strings.Fields(receiveOutput)
+		wordsLower := make([]string, len(words))
 		for i, w := range words {
-			if strings.ToLower(w) == "from" && i+2 < len(words) {
-				if strings.ToLower(words[i+2]) == "at" {
+			wordsLower[i] = strings.ToLower(w)
+		}
+		for i, w := range wordsLower {
+			if w == "from" && i+2 < len(words) {
+				if wordsLower[i+2] == "at" {
 					candidateUser := words[i+1]
 					receiveSender = fmt.Sprintf("%s@%s", candidateUser, config.Server.Domain)
 					log.Printf("Identified envelope sender from receive: %s", receiveSender)
@@ -449,10 +468,24 @@ func parseSpoolData(content []byte, receiveOutput string, rscsSender string) (en
 				continue
 			}
 
-			if strings.Contains(strings.ToUpper(line), "MSG:FROM:") {
-				parts := strings.SplitN(line, ":", 3)
-				if len(parts) >= 3 {
-					realSender = strings.TrimSpace(parts[2])
+			lineUpper := strings.ToUpper(line)
+			if strings.Contains(lineUpper, "MSG:FROM:") {
+				if realSender == "" {
+					parts := strings.SplitN(line, ":", 3)
+					if len(parts) >= 3 {
+						fromPart := strings.TrimSpace(parts[2])
+						if toIdx := strings.Index(fromPart, " TO:"); toIdx != -1 {
+							fromPart = strings.TrimSpace(fromPart[:toIdx])
+						}
+						fromPart = strings.ReplaceAll(fromPart, "--", "@")
+						fromPart = strings.ReplaceAll(fromPart, " ", "")
+						if strings.Contains(fromPart, "@") {
+							parts := strings.Split(fromPart, "@")
+							if len(parts) == 2 {
+								realSender = resolveSender(parts[0], parts[1])
+							}
+						}
+					}
 				}
 				continue
 			}
@@ -471,9 +504,9 @@ func parseSpoolData(content []byte, receiveOutput string, rscsSender string) (en
 				switch key {
 				case "to", "toa":
 					upperVal := strings.ToUpper(val)
-					if strings.Contains(upperVal, config.NJE.RunAsUser) &&
-						strings.Contains(upperVal, config.Routing.SMTPNode) ||
-						strings.Contains(upperVal, strings.ToUpper(config.Server.Domain)) {
+					if strings.Contains(upperVal, runAsUserUpper) &&
+						strings.Contains(upperVal, smtpNodeUpper) ||
+						strings.Contains(upperVal, serverDomainUpper) {
 						continue
 					}
 					headers["to"] = val
@@ -498,21 +531,63 @@ func parseSpoolData(content []byte, receiveOutput string, rscsSender string) (en
 			}
 
 			parsingHeaders = false
-			if strings.HasPrefix(line, fmt.Sprintf("[%s", config.Routing.RSCSNode)) {
+			if strings.HasPrefix(line, rscsNodePrefix) {
 				break
 			}
 			if isGarbage(line) {
 				continue
 			}
-			bodyLines = append(bodyLines, line)
+			// Check for late headers in body (PROFS compatibility)
+			if idx := strings.Index(line, ":"); idx > 0 && idx < 15 {
+				key := strings.ToLower(strings.TrimSpace(line[:idx]))
+				val := strings.TrimSpace(line[idx+1:])
+				if key == "to" && strings.Contains(val, "@") && headers["to"] == "" {
+					headers["to"] = val
+					continue
+				}
+				if (key == "from" || key == "frm") && headers["from"] == "" {
+					headers["from"] = val
+					continue
+				}
+				if key == "subject" && headers["subject"] == "" {
+					headers["subject"] = val
+					continue
+				}
+			}
+			if !firstBodyLine {
+				bodyBuilder.WriteString("\r\n")
+			}
+			bodyBuilder.WriteString(line)
+			firstBodyLine = false
 		} else {
-			if strings.HasPrefix(line, fmt.Sprintf("[%s", config.Routing.RSCSNode)) {
+			if strings.HasPrefix(line, rscsNodePrefix) {
 				break
 			}
 			if isGarbage(line) {
 				continue
 			}
-			bodyLines = append(bodyLines, line)
+			// Check for late headers in body (PROFS compatibility)
+			if idx := strings.Index(line, ":"); idx > 0 && idx < 15 {
+				key := strings.ToLower(strings.TrimSpace(line[:idx]))
+				val := strings.TrimSpace(line[idx+1:])
+				if key == "to" && strings.Contains(val, "@") && headers["to"] == "" {
+					headers["to"] = val
+					continue
+				}
+				if (key == "from" || key == "frm") && headers["from"] == "" {
+					headers["from"] = val
+					continue
+				}
+				if key == "subject" && headers["subject"] == "" {
+					headers["subject"] = val
+					continue
+				}
+			}
+			if !firstBodyLine {
+				bodyBuilder.WriteString("\r\n")
+			}
+			bodyBuilder.WriteString(line)
+			firstBodyLine = false
 		}
 	}
 
@@ -545,5 +620,5 @@ func parseSpoolData(content []byte, receiveOutput string, rscsSender string) (en
 		finalFrom = fmt.Sprintf("\"%s\" <%s>", cleanName, realSender)
 	}
 
-	return realSender, finalFrom, to, subject, headers, strings.Join(bodyLines, "\r\n")
+	return realSender, finalFrom, to, subject, headers, bodyBuilder.String()
 }

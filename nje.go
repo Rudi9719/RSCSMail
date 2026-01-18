@@ -55,8 +55,9 @@ func sendErrorNotification(failedRecipient, reason, disposition, savedPath strin
 		return
 	}
 
-	adminUser := config.Routing.ErrorRecipient
-	adminNode := config.Routing.RSCSNode
+	adminUserUpper := strings.ToUpper(config.Routing.ErrorRecipient)
+	adminNodeUpper := strings.ToUpper(config.Routing.RSCSNode)
+	actionLower := strings.ToLower(config.Routing.DefaultAction)
 
 	errPath := filepath.Join(os.TempDir(), fmt.Sprintf("error_%d.txt", time.Now().UnixNano()))
 
@@ -68,14 +69,16 @@ func sendErrorNotification(failedRecipient, reason, disposition, savedPath strin
 	}
 	f.Close()
 
-	sendOverNJE(strings.ToUpper(adminUser), strings.ToUpper(adminNode), errPath, "ERROR", "LOG", "")
-	if strings.ToLower(config.Routing.DefaultAction) == "delete" {
+	sendOverNJE(adminUserUpper, adminNodeUpper, errPath, "ERROR", "LOG", "")
+	if actionLower == "delete" {
 		os.Remove(errPath)
 	}
 }
 
 func handleDispatch(recipient, filePath, cmsFn, cmsFt, subject string) {
-	action := strings.ToLower(config.Routing.DefaultAction)
+	actionLower := strings.ToLower(config.Routing.DefaultAction)
+	targetNode := config.Routing.RSCSNode
+
 	parts := strings.Split(recipient, "@")
 	if len(parts) != 2 {
 		return
@@ -85,7 +88,7 @@ func handleDispatch(recipient, filePath, cmsFn, cmsFt, subject string) {
 	if !strings.EqualFold(domain, config.Server.Domain) {
 		reason := fmt.Sprintf("domain %s not configured (only %s supported)", domain, config.Server.Domain)
 
-		switch action {
+		switch actionLower {
 		case "save":
 			log.Printf("routing failed for %s. saved at %s", recipient, filePath)
 			sendErrorNotification(recipient, reason, "Saved", filePath)
@@ -102,7 +105,7 @@ func handleDispatch(recipient, filePath, cmsFn, cmsFt, subject string) {
 	if !validUser {
 		reason := fmt.Sprintf("invalid CMS userid (%s)", user)
 
-		switch action {
+		switch actionLower {
 		case "save":
 			log.Printf("routing failed for %s. saved at %s", recipient, filePath)
 			sendErrorNotification(recipient, reason, "Saved", filePath)
@@ -114,17 +117,17 @@ func handleDispatch(recipient, filePath, cmsFn, cmsFt, subject string) {
 		return
 	}
 
-	targetNode := config.Routing.RSCSNode
-	cmsUser := strings.ToUpper(user)
+	cmsUserUpper := strings.ToUpper(user)
 
-	if err := sendOverNJE(cmsUser, targetNode, filePath, cmsFn, cmsFt, subject); err != nil {
-		log.Printf("nje error sending to %s@%s: %v", cmsUser, targetNode, err)
+	if err := sendOverNJE(cmsUserUpper, targetNode, filePath, cmsFn, cmsFt, subject); err != nil {
+		log.Printf("nje error sending to %s@%s: %v", cmsUserUpper, targetNode, err)
 	} else {
-		log.Printf("sent %s %s to %s@%s", cmsFn, cmsFt, cmsUser, targetNode)
+		log.Printf("sent %s %s to %s@%s", cmsFn, cmsFt, cmsUserUpper, targetNode)
 	}
 }
 
 func sendOverNJE(user, node, file, cmsFn, cmsFt, subject string) error {
+	binary := config.NJE.PunchPath
 	if strings.Contains(user, "--") {
 		parts := strings.SplitN(user, "--", 2)
 		if len(parts) == 2 {
@@ -135,11 +138,6 @@ func sendOverNJE(user, node, file, cmsFn, cmsFt, subject string) error {
 
 	target := fmt.Sprintf("%s@%s", user, node)
 	log.Printf("DEBUG: sendOverNJE target=%s fn=%s ft=%s subject=%q", target, cmsFn, cmsFt, subject)
-
-	binary := config.NJE.PunchPath
-	if binary == "" {
-		binary = "punch"
-	}
 
 	args := []string{target, "-fn", cmsFn, cmsFt}
 

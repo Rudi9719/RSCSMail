@@ -108,20 +108,22 @@ func ensureDKIMKey(path string) error {
 }
 
 func ensureSPFRecord() {
+	domain := config.Server.Domain
+	
 	ip, err := getOutboundIP()
 	if err != nil {
 		log.Printf("Warning: Could not determine outbound IP for SPF check: %v", err)
 		return
 	}
 
-	sender := fmt.Sprintf("%s@%s", config.Routing.ErrorRecipient, config.Server.Domain)
-	res := spf.CheckHost(ip, config.Server.Domain, sender, config.Server.Domain)
+	sender := fmt.Sprintf("%s@%s", config.Routing.ErrorRecipient, domain)
+	res := spf.CheckHost(ip, domain, sender, domain)
 
 	if res == spf.Pass {
-		log.Printf("SPF record verified in DNS for %s (allows %s)", config.Server.Domain, ip)
+		log.Printf("SPF record verified in DNS for %s (allows %s)", domain, ip)
 	} else {
 		log.Printf("********************************************************************************")
-		log.Printf("* SPF Record Missing or Invalid for %s", config.Server.Domain)
+		log.Printf("* SPF Record Missing or Invalid for %s", domain)
 		log.Printf("* Current IP %s is NOT allowed (Result: %s)", ip, res)
 		log.Printf("* Suggested Record:")
 		log.Printf("v=spf1 ip4:%s -all", ip)
@@ -130,7 +132,8 @@ func ensureSPFRecord() {
 }
 
 func ensureDMARCRecord() {
-	dmarcName := fmt.Sprintf("_dmarc.%s", config.Server.Domain)
+	domain := config.Server.Domain
+	dmarcName := fmt.Sprintf("_dmarc.%s", domain)
 	expectedRUA := fmt.Sprintf("mailto:%s", config.Routing.ErrorRecipient)
 
 	txtRecords, err := net.LookupTXT(dmarcName)
@@ -150,12 +153,12 @@ func ensureDMARCRecord() {
 
 	if !dmarcMatch {
 		log.Printf("********************************************************************************")
-		log.Printf("* DMARC Record Missing or Invalid for %s", config.Server.Domain)
+		log.Printf("* DMARC Record Missing or Invalid for %s", domain)
 		log.Printf("* Suggested Record:")
 		log.Printf("v=DMARC1; p=quarantine; rua=%s", expectedRUA)
 		log.Printf("********************************************************************************")
 	} else {
-		log.Printf("DMARC record verified in DNS for %s", config.Server.Domain)
+		log.Printf("DMARC record verified in DNS for %s", domain)
 	}
 }
 

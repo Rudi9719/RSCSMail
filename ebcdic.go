@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -27,6 +28,12 @@ var asciiToEbcdic = [256]byte{
 	0x9F, 0xA0, 0xAA, 0xAB, 0xAC, 0xAE, 0xAF, 0xB0, 0xB1, 0xB2, 0xB3, 0xB4, 0xB5, 0xB6, 0xB7, 0xB8,
 	0xB9, 0xBA, 0xBB, 0xBC, 0xBE, 0xBF, 0xCA, 0xCB, 0xCC, 0xCD, 0xCE, 0xCF, 0xDA, 0xDB, 0xDC, 0xDD,
 	0xDE, 0xDF, 0xEA, 0xEB, 0xEC, 0xED, 0xEE, 0xEF, 0xFA, 0xFB, 0xFC, 0xFD, 0xFE, 0xFF,
+}
+
+var ebcdicBufPool = sync.Pool{
+	New: func() interface{} {
+		return new(bytes.Buffer)
+	},
 }
 
 func toEbcdic(s string) []byte {
@@ -86,13 +93,19 @@ func writeEbcdicRecord(buf *bytes.Buffer, control []byte, asciiContent string) {
 }
 
 func generateEbcdicNote(from string, to []string, subject, fullSender string, body io.Reader, timestamp time.Time) (*bytes.Buffer, error) {
-	ebcdicBuf := new(bytes.Buffer)
+	ebcdicBuf := ebcdicBufPool.Get().(*bytes.Buffer)
+	ebcdicBuf.Reset()
 
 	fromUser, fromNode := parseAddress(from)
+	fromUserUpper := strings.ToUpper(fromUser)
+	fromNodeUpper := strings.ToUpper(fromNode)
+
 	toUser, toNode := "UNKNOWN", "UNKNOWN"
 	if len(to) > 0 {
 		toUser, toNode = parseAddress(to[0])
 	}
+	toUserUpper := strings.ToUpper(toUser)
+	toNodeUpper := strings.ToUpper(toNode)
 
 	if timestamp.IsZero() {
 		timestamp = time.Now()
@@ -100,13 +113,12 @@ func generateEbcdicNote(from string, to []string, subject, fullSender string, bo
 	timeStr := timestamp.Format("01/02/06 15:04:05")
 
 	headerStr := fmt.Sprintf("MSG:FROM: %-8s--%-8s TO: %-8s--%-8s          %s",
-		strings.ToUpper(fromUser), strings.ToUpper(fromNode),
-		strings.ToUpper(toUser), strings.ToUpper(toNode), timeStr)
+		fromUserUpper, fromNodeUpper, toUserUpper, toNodeUpper, timeStr)
 
 	writeEbcdicRecord(ebcdicBuf, []byte{0xFE}, headerStr)
 
 	if len(to) > 0 {
-		writeEbcdicRecord(ebcdicBuf, []byte{0x40}, fmt.Sprintf("To: %s --%s", strings.ToUpper(toUser), strings.ToUpper(toNode)))
+		writeEbcdicRecord(ebcdicBuf, []byte{0x40}, fmt.Sprintf("To: %s --%s", toUserUpper, toNodeUpper))
 	}
 
 	if fullSender != "" {
@@ -128,8 +140,13 @@ func generateEbcdicNote(from string, to []string, subject, fullSender string, bo
 	}
 
 	if err := scanner.Err(); err != nil {
+		ebcdicBufPool.Put(ebcdicBuf)
 		return nil, err
 	}
 
-	return ebcdicBuf, nil
+	result := new(bytes.Buffer)
+	result.Write(ebcdicBuf.Bytes())
+	ebcdicBufPool.Put(ebcdicBuf)
+
+	return result, nil
 }
