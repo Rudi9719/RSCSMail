@@ -4,7 +4,9 @@
 This was an attempt to funnel SMTP into RSCS for reading with PROFS on vintage systems that expanded
 
 Only tested with [nje-ii](https://github.com/HackerSmacker/nje-ii) RSCS and PUBVM. 
+
 **Ensure NJE-II is working on your SMTP NODE and able to communicate with your RSCS node first!**
+
 **Ensure your DNS records are set up for your domain before running this project!**
 
 
@@ -30,6 +32,7 @@ This project only uses the native Go build tools, and allows an optional config.
 ```
 
 **Ensure your config.toml is set up for your domain before launching!**
+
 **The NJE-ii run as user must exist locally on the SMTP node** 
 
 ## Sending a note to email
