@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/fsnotify/fsnotify"
 )
 
 var (
@@ -28,16 +30,40 @@ func StartSpoolMonitor() {
 		return
 	}
 
-	interval, err := time.ParseDuration(config.Spool.Interval)
+	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		interval = 5 * time.Second
+		log.Printf("Failed to create file watcher: %v", err)
+		return
+	}
+	defer watcher.Close()
+
+	err = watcher.Add(config.Spool.Directory)
+	if err != nil {
+		log.Printf("Failed to watch spool directory %s: %v", config.Spool.Directory, err)
+		return
 	}
 
-	log.Printf("Starting spool monitor on %s (interval: %s)", config.Spool.Directory, interval)
+	log.Printf("Starting spool monitor on %s (using fsnotify)", config.Spool.Directory)
 
-	ticker := time.NewTicker(interval)
-	for range ticker.C {
-		scanSpool()
+	// Process any existing files on startup
+	scanSpool()
+
+	for {
+		select {
+		case event, ok := <-watcher.Events:
+			if !ok {
+				return
+			}
+			// React to new or modified files
+			if event.Op&(fsnotify.Create|fsnotify.Write) != 0 {
+				scanSpool()
+			}
+		case err, ok := <-watcher.Errors:
+			if !ok {
+				return
+			}
+			log.Printf("Spool watcher error: %v", err)
+		}
 	}
 }
 

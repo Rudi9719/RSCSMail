@@ -15,7 +15,6 @@ form = "STANDARD"
 
 [spool]
 directory = "/var/spool/bitnet"
-interval = "5s"
 
 [routing]
 default_action = "delete"

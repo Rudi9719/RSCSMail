@@ -223,6 +223,12 @@ func main() {
 		}
 	}
 
+	// Deprecate Interval for fsnotify
+	if config.Spool.Interval != "" {
+		log.Printf("Interval is deprecated, see link below for more info. ")
+		log.Printf("https://raw.githubusercontent.com/Rudi9719/RSCSMail/refs/heads/master/config.toml.dist")
+	}
+
 	if err := ensureDKIMKey("dkim_private.pem"); err != nil {
 		log.Fatalf("Failed to ensure DKIM key: %v", err)
 	}

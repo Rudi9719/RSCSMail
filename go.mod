@@ -12,6 +12,7 @@ require (
 
 require (
 	github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6 // indirect
+	github.com/fsnotify/fsnotify v1.9.0
 	github.com/miekg/dns v1.1.70 // indirect
 	golang.org/x/crypto v0.47.0 // indirect
 	golang.org/x/mod v0.32.0 // indirect
