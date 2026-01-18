@@ -1,3 +1,17 @@
+/*
+RSCS Mail bridges modern mail requirements set by Google to RSCS for Vintage Mainframes.
+Specifically this was designed to bring 2025 support to IBM PROFS.
+Along the way support for CMS Notes, and eventually any file with proper headers emerged.
+
+It is released under the Unlicense because go.dev rejected the WTFPL.
+
+Usage:
+
+	rscsmail [/path/to/config.toml]
+
+The path to config is optional, and defaults to ./config.toml
+Please ensure your working directory is secure unless config.toml specifies a secure path for DKIM keys.
+*/
 package main
 
 import (

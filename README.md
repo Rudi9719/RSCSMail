@@ -53,6 +53,7 @@ For example PUBVM uses SMTP@PUBNET for RSCS Mail. I will show you how this invoc
 
  Once you're started, CMS and PROFS are different. While you're editing the note you will need the following:
  - **Only for PROFS,** you must put a blank line after headers or formatting will clobber the lines together.
+   - PROFS seems to use [Semantic linefeeds](https://rhodesmill.org/brandon/2012/one-sentence-per-line/)
  - From (Optional, will be generated however accepts an author per [RFC 5322](https://datatracker.ietf.org/doc/html/rfc5322#appendix-A.1.2))
  - Subject (Optional, just type Subject: for CMS Notes on a new line)
  - To (Required, RSCS Mail will ignore the to user for SMTP, so you need a To: line with an internet address)
