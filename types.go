@@ -32,6 +32,7 @@ type ServerConfig struct {
 // NJEConfig defines constraints and command options for the NJE/Punch interface.
 type NJEConfig struct {
 	BinaryPath   string `toml:"binary_path"`
+	PunchPath    string `toml:"punch_path"`
 	ReceivePath  string `toml:"receive_path"`
 	RunAsUser    string `toml:"run_as_user"`
 	Tag          string `toml:"tag"`

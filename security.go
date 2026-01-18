@@ -19,8 +19,10 @@ import (
 )
 
 func ensureDKIMKey(path string) error {
+	freshKey := false
 	if _, err := os.Stat(path); err != nil {
 		log.Printf("DKIM key not found at %s. Generating 2048-bit RSA key...", path)
+		freshKey = true
 
 		key, err := rsa.GenerateKey(rand.Reader, 2048)
 		if err != nil {
@@ -64,13 +66,97 @@ func ensureDKIMKey(path string) error {
 	}
 
 	pubBase64 := base64.StdEncoding.EncodeToString(pubBytes)
-	log.Printf("********************************************************************************")
-	log.Printf("* DKIM Key Loaded: %s", path)
-	log.Printf("* DNS TXT Record (Selector: default):")
-	log.Printf("* v=DKIM1; k=rsa; p=%s", pubBase64)
-	log.Printf("********************************************************************************")
+
+	selector := config.Routing.DkimSelector
+	if selector == "" {
+		selector = "default"
+	}
+	domain := config.Server.Domain
+	dnsName := fmt.Sprintf("%s._domainkey.%s", selector, domain)
+
+	dnsMatch := false
+	if !freshKey {
+		txtRecords, err := net.LookupTXT(dnsName)
+		if err == nil {
+			for _, record := range txtRecords {
+				cleanRecord := strings.ReplaceAll(record, " ", "")
+				if strings.Contains(cleanRecord, "p="+pubBase64) {
+					dnsMatch = true
+					break
+				}
+			}
+		} else {
+			log.Printf("DNS Lookup failed for %s: %v", dnsName, err)
+		}
+	}
+
+	if freshKey || !dnsMatch {
+		if !freshKey && !dnsMatch {
+			log.Printf("WARNING: DKIM DNS record mismatch or missing for %s", dnsName)
+		}
+
+		log.Printf("********************************************************************************")
+		log.Printf("* DKIM Key Loaded: %s", path)
+		log.Printf("* DNS TXT Record (Selector: %s):", selector)
+		log.Printf("v=DKIM1; k=rsa; p=%s", pubBase64)
+		log.Printf("********************************************************************************")
+	} else {
+		log.Printf("DKIM Key verified in DNS for %s (selector: %s)", domain, selector)
+	}
 
 	return nil
+}
+
+func ensureSPFRecord() {
+	ip, err := getOutboundIP()
+	if err != nil {
+		log.Printf("Warning: Could not determine outbound IP for SPF check: %v", err)
+		return
+	}
+
+	sender := fmt.Sprintf("%s@%s", config.Routing.ErrorRecipient, config.Server.Domain)
+	res := spf.CheckHost(ip, config.Server.Domain, sender, config.Server.Domain)
+
+	if res == spf.Pass {
+		log.Printf("SPF record verified in DNS for %s (allows %s)", config.Server.Domain, ip)
+	} else {
+		log.Printf("********************************************************************************")
+		log.Printf("* SPF Record Missing or Invalid for %s", config.Server.Domain)
+		log.Printf("* Current IP %s is NOT allowed (Result: %s)", ip, res)
+		log.Printf("* Suggested Record:")
+		log.Printf("v=spf1 ip4:%s -all", ip)
+		log.Printf("********************************************************************************")
+	}
+}
+
+func ensureDMARCRecord() {
+	dmarcName := fmt.Sprintf("_dmarc.%s", config.Server.Domain)
+	expectedRUA := fmt.Sprintf("mailto:%s", config.Routing.ErrorRecipient)
+
+	txtRecords, err := net.LookupTXT(dmarcName)
+	dmarcMatch := false
+
+	if err == nil {
+		for _, record := range txtRecords {
+			cleanRecord := strings.ReplaceAll(record, " ", "")
+			if strings.Contains(cleanRecord, "v=DMARC1") && strings.Contains(cleanRecord, "rua="+expectedRUA) {
+				dmarcMatch = true
+				break
+			}
+		}
+	} else {
+		log.Printf("DNS Lookup failed for %s: %v", dmarcName, err)
+	}
+
+	if !dmarcMatch {
+		log.Printf("********************************************************************************")
+		log.Printf("* DMARC Record Missing or Invalid for %s", config.Server.Domain)
+		log.Printf("* Suggested Record:")
+		log.Printf("v=DMARC1; p=quarantine; rua=%s", expectedRUA)
+		log.Printf("********************************************************************************")
+	} else {
+		log.Printf("DMARC record verified in DNS for %s", config.Server.Domain)
+	}
 }
 
 func checkEmailSecurity(ip string, hello string, from string, msg []byte) (bool, string) {
@@ -176,4 +262,15 @@ func signDKIM(msg []byte, from string) ([]byte, error) {
 	}
 
 	return signedBuf.Bytes(), nil
+}
+
+func getOutboundIP() (net.IP, error) {
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+
+	localAddr := conn.LocalAddr().(*net.UDPAddr)
+	return localAddr.IP, nil
 }

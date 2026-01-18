@@ -96,7 +96,6 @@ func handleDispatch(recipient, filePath, cmsFn, cmsFt, subject string) {
 		}
 		return
 	}
-	// We are good to go, target node is our configured node.
 	targetNode := config.Routing.RSCSNode
 
 	validUser := isValidCMSUser(user)
@@ -136,7 +135,7 @@ func sendOverNJE(user, node, file, cmsFn, cmsFt, subject string) error {
 	target := fmt.Sprintf("%s@%s", user, node)
 	log.Printf("DEBUG: sendOverNJE target=%s fn=%s ft=%s subject=%q", target, cmsFn, cmsFt, subject)
 
-	binary := config.NJE.BinaryPath
+	binary := config.NJE.PunchPath
 	if binary == "" {
 		binary = "punch"
 	}

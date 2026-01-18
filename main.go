@@ -195,10 +195,22 @@ func main() {
 		log.Fatal(err)
 	}
 
+	// Deprecate BinaryPath in favor of more obvious PunchPath
+	if config.NJE.PunchPath == "" {
+		if config.NJE.BinaryPath != "" {
+			config.NJE.PunchPath = config.NJE.BinaryPath
+		}
+	}
+
 	if err := ensureDKIMKey("dkim_private.pem"); err != nil {
 		log.Fatalf("Failed to ensure DKIM key: %v", err)
 	}
-	go StartSpoolMonitor()
+
+	go ensureDMARCRecord()
+	go ensureSPFRecord()
+	if config.Spool.Directory != "" {
+		go StartSpoolMonitor()
+	}
 
 	be := &Backend{}
 	s := smtp.NewServer(be)
