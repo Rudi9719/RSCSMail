@@ -1,4 +1,4 @@
-module rscsmail
+module github.com/Rudi9719/RSCSMail
 
 go 1.25.5
 
