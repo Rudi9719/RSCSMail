@@ -198,6 +198,8 @@ func main() {
 	// Deprecate BinaryPath in favor of more obvious PunchPath
 	if config.NJE.PunchPath == "" {
 		if config.NJE.BinaryPath != "" {
+			log.Printf("Binary Path is deprecated, use Punch Path instead, see link below for more info. ")
+			log.Printf("https://raw.githubusercontent.com/Rudi9719/RSCSMail/refs/heads/master/config.toml.dist")
 			config.NJE.PunchPath = config.NJE.BinaryPath
 		}
 	}
