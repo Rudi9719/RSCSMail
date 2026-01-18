@@ -1,8 +1,9 @@
 
 # RSCS Mail
 ![Build Status](https://github.com/Rudi9719/RSCSMail/actions/workflows/go.yml/badge.svg)
+[![CodeQL Checks](https://github.com/Rudi9719/RSCSMail/actions/workflows/github-code-scanning/codeql/badge.svg)](https://github.com/Rudi9719/RSCSMail/actions/workflows/github-code-scanning/codeql)
+[![Dependency Graph](https://github.com/Rudi9719/RSCSMail/actions/workflows/dependabot/update-graph/badge.svg)](https://github.com/Rudi9719/RSCSMail/actions/workflows/dependabot/update-graph)
 [![Go Reference](https://pkg.go.dev/badge/github.com/Rudi9719/RSCSMail.svg)](https://pkg.go.dev/github.com/Rudi9719/RSCSMail)
-
 
 This was an attempt to funnel SMTP into RSCS for reading with PROFS on vintage systems that expanded
 
