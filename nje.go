@@ -57,10 +57,6 @@ func deriveCMSShortNames(filenames []string) []string {
 		return fmt.Sprintf("%X", index)
 	}
 
-	type nameInfo struct {
-		baseName  string
-		extension string
-	}
 	infos := make([]nameInfo, len(filenames))
 	baseCount := make(map[string]int)
 

@@ -77,3 +77,8 @@ type AttachmentInfo struct {
 	Fn       string
 	Ft       string
 }
+
+type nameInfo struct {
+	baseName  string
+	extension string
+}
