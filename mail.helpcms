@@ -1,0 +1,48 @@
+ 
+.cs 1 on
+RSCS Mail for Users
+ 
+RSCS Mail allows you to send NOTEs from PROFS or spool to the internet
+with all modern internet email requirements set by Google.
+ 
+To invoke the MAIL EXEC, use one of the following incantations:
+ 
+  MAIL (PROFS      : To prepare a NOTE through SMTP using PROFS
+  MAIL (CMS        : To prepare a NOTE through SMTP using the CMS NOTE
+  MAIL ?           : To show this preamble
+ 
+.cs 1 off
+.cs 2 on
+ 
+Make sure to actually send the file (PROFS To: or CMS NOTE) to the
+configured RSCS User and Node. For PUBVM this is PUBNET(SMTP) or see
+the example below for CMS Notes:
+ 
+    NOTE SMTP AT PUBNET
+ 
+.cs 2 off
+.cs 3 on
+It is required that that your message body includes SMTP Headers:
++----------------------------------------------------------------+
+| To: email1@user.com email2@user.com                   Required |
++----------------------------------------------------------------+
+| CC: email3@user.com,email4@user.com                   Optional |
++----------------------------------------------------------------+
+| Bcc: email5@user.com, email6@user.com                 Optional |
++----------------------------------------------------------------+
+| Subject: For CMS Notes                                Optional |
++----------------------------------------------------------------+
+.cs 3 off
+.cs 5 on
+ 
+Attachments will be received to the reader in binary format, using a
+modified 8.3 filename with the original filename appended to the incoming
+message body.
+ 
+Important to Remember:
+ 
+PROFS uses Semantic linefeeds so keep this in mind when working with long
+SMTP Header lines and MUST put a blank line between headers, as well as
+between headers and your message body.
+CMS Notes doesn't apply special formatting.
+.cs 5 off
