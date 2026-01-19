@@ -35,6 +35,12 @@ This project only uses the native Go build tools, and allows an optional config.
   ./rscsmail (/path/to/config.toml)
 ```
 
+You don't even need to download the repo if your GOPATH is set!
+```bash
+  go install github.com/rudi9719/rscsmail@latest
+  rscsmail (/path/to/config.toml)
+```
+
 **Ensure your config.toml is set up for your domain before launching!**
 
 **The NJE-ii run as user must exist locally on the SMTP node** 
