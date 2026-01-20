@@ -104,6 +104,9 @@ func isValidCMSUser(user string) bool {
 	if u == "root" || u == "operator" || u == "system" || strings.HasPrefix(u, "guest") {
 		return false
 	}
+	if u == "postmaster" || u == "abuse" {
+		return true
+	}
 	if len(u) == 0 || len(u) > 8 {
 		return false
 	}
@@ -138,6 +141,7 @@ func sendErrorNotification(failedRecipient, reason, disposition, savedPath strin
 func handleDispatch(recipient, filePath, cmsFn, cmsFt, subject string) {
 	actionLower := strings.ToLower(config.Routing.DefaultAction)
 	targetNode := config.Routing.RSCSNode
+	errorRecipientUpper := strings.ToUpper(config.Routing.ErrorRecipient)
 
 	parts := strings.Split(recipient, "@")
 	if len(parts) != 2 {
@@ -178,6 +182,9 @@ func handleDispatch(recipient, filePath, cmsFn, cmsFt, subject string) {
 	}
 
 	cmsUserUpper := strings.ToUpper(user)
+	if cmsUserUpper == "POSTMASTER" || cmsUserUpper == "ABUSE" {
+		cmsUserUpper = errorRecipientUpper
+	}
 
 	if err := sendOverNJE(cmsUserUpper, targetNode, filePath, cmsFn, cmsFt, subject); err != nil {
 		log.Printf("nje error sending to %s@%s: %v", cmsUserUpper, targetNode, err)

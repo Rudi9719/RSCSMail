@@ -10,8 +10,7 @@ func TestIsGarbage(t *testing.T) {
 		{"Hello World", false},
 		{"Just a normal line of text.", false},
 		{string([]byte{0x00, 0x01, 0x02, 0x03}), true}, // Control chars
-		{"DKIM Testing string with \x01", true}, // DKIM Testing with garbage
-		{"DKIM Testing clean", false},
+		{"DKIM Testing string with \x01", false},
 	}
 
 	for _, tt := range tests {

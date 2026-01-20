@@ -23,10 +23,11 @@ type SpoolConfig struct {
 
 // ServerConfig defines the SMTP server settings.
 type ServerConfig struct {
-	ListenAddr  string `toml:"listen_addr"`
-	Domain      string `toml:"domain"` // EHLO identity
-	TLSCertFile string `toml:"tls_cert_file"`
-	TLSKeyFile  string `toml:"tls_key_file"`
+	ListenAddr   string `toml:"listen_addr"`
+	EhloIdentity string `toml:"ehlo_identity"`
+	Domain       string `toml:"domain"`
+	TLSCertFile  string `toml:"tls_cert_file"`
+	TLSKeyFile   string `toml:"tls_key_file"`
 }
 
 // NJEConfig defines constraints and command options for the NJE/Punch interface.

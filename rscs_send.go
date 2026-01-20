@@ -372,7 +372,7 @@ func sendMail(addr string, auth smtp.Auth, from string, to []string, msg []byte,
 		}
 	}
 	defer c.Close()
-	heloName := config.Server.Domain
+	heloName := config.Server.EhloIdentity
 	if err := c.Hello(heloName); err != nil {
 		return err
 	}
@@ -468,10 +468,6 @@ func isGarbage(line string) bool {
 		return true
 	}
 
-	if strings.Contains(line, "DKIM Testing") && nonPrintable > 0 {
-		return true
-	}
-
 	return false
 }
 
@@ -491,16 +487,15 @@ func normalizeAddresses(s string) string {
 func parseSpoolData(content []byte, receiveOutput string, rscsSender string) (envelopeSender, headerFrom, to, subject string, headers map[string]string, body string) {
 	var receiveSender string
 	var bodyBuilder strings.Builder
+	parsingHeaders := true
+	firstBodyLine := true
 	headers = make(map[string]string)
 	bodyBuilder.Grow(len(content))
 	scanner := bufio.NewScanner(bytes.NewReader(content))
-	parsingHeaders := true
-	firstBodyLine := true
 	serverDomainUpper := strings.ToUpper(config.Server.Domain)
 	runAsUserUpper := strings.ToUpper(config.NJE.RunAsUser)
 	smtpNodeUpper := strings.ToUpper(config.Routing.SMTPNode)
 	rscsNodeUpper := strings.ToUpper(config.Routing.RSCSNode)
-
 	rscsNodePrefix := fmt.Sprintf("[%s", rscsNodeUpper)
 
 	if rscsSender != "" {

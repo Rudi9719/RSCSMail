@@ -1,6 +1,7 @@
 [server]
 listen_addr = ":25"
 domain = "example.org"
+ehlo_identity = "mailhost.eample.org"
 tls_cert_file = "/etc/letsencrypt/live/"
 tls_key_file = "/etc/letsencrypt/live/"
 

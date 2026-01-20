@@ -44,7 +44,7 @@ var (
 func (bk *Backend) NewSession(c *smtp.Conn) (smtp.Session, error) {
 	return &Session{
 		RemoteAddr: c.Conn().RemoteAddr().String(),
-		HelloName:  c.Hostname(),
+		HelloName:  config.Server.EhloIdentity,
 		Conn:       c.Conn(),
 	}, nil
 }
@@ -324,7 +324,14 @@ func main() {
 		log.Printf("https://raw.githubusercontent.com/Rudi9719/RSCSMail/refs/heads/master/config.toml.dist")
 	}
 
-	if err := ensureDKIMKey("dkim_private.pem"); err != nil {
+	// Check for ehlo_identity
+	if config.Server.EhloIdentity == "" {
+		config.Server.EhloIdentity = config.Server.Domain
+		log.Printf("ehlo identity not set, see link below for more info. ")
+		log.Printf("https://raw.githubusercontent.com/Rudi9719/RSCSMail/refs/heads/master/config.toml.dist")
+	}
+
+	if err := ensureDKIMKey(config.Routing.DkimKeyPath); err != nil {
 		log.Fatalf("Failed to ensure DKIM key: %v", err)
 	}
 
