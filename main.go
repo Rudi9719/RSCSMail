@@ -26,6 +26,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -34,10 +35,11 @@ import (
 )
 
 var (
-	config        Config
-	htmlTagRegex  = regexp.MustCompile("<[^>]*>")
-	htmlLinkRegex = regexp.MustCompile(`(?i)<a[^>]*href=["']([^"']*)["'][^>]*>((?s).*?)</a>`)
-	cmsUserRegex  = regexp.MustCompile(`[^a-zA-Z0-9]+`)
+	config          Config
+	htmlTagRegex    = regexp.MustCompile("<[^>]*>")
+	htmlLinkRegex   = regexp.MustCompile(`(?i)<a[^>]*href=["']([^"']*)["'][^>]*>((?s).*?)</a>`)
+	cmsUserRegex    = regexp.MustCompile(`[^a-zA-Z0-9]+`)
+	processingFiles sync.Map
 )
 
 // NewSession creates a new SMTP session.
@@ -146,11 +148,11 @@ func (s *Session) Data(r io.Reader) error {
 
 	if !pass {
 		banner := "*****************************************************************************\n" +
-			"*                                                                              *\n" +
-			"*                     WARNING: SENDER IDENTITY UNVERIFIED                      *\n" +
-			"*                                                                              *\n" +
-			fmt.Sprintf("* Reason: %-55s *\n", reason) +
-			"*                                                                              *\n" +
+			"*                                                                           *\n" +
+			"*                     WARNING: SENDER IDENTITY UNVERIFIED                   *\n" +
+			"*                                                                           *\n" +
+			fmt.Sprintf("* Reason: %-65s *\n", reason) +
+			"*                                                                           *\n" +
 			"*****************************************************************************\n"
 		bodyBuf.WriteString(banner)
 	}
