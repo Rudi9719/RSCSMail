@@ -19,10 +19,6 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
-var (
-	processingFiles sync.Map
-)
-
 // StartSpoolMonitor polls the configured directory for new files.
 func StartSpoolMonitor() {
 	if config.Spool.Directory == "" {
@@ -153,7 +149,7 @@ func processSpoolFile(path string) {
 
 	defer os.Remove(tempFile)
 
-	cmd := exec.Command("sudo", "-u", "smtp", receiveCmd, "-n", "-o", tempFile, path)
+	cmd := exec.Command("sudo", "-u", config.NJE.RunAsUser, receiveCmd, "-n", "-o", tempFile, path)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		log.Printf("Failed to execute receive for %s: %v. Output: %s", path, err, string(out))
