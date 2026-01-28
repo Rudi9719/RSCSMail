@@ -2,13 +2,98 @@ package main
 
 import (
 	"fmt"
+	"html"
 	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
+
+	htmltomarkdown "github.com/JohannesKaufmann/html-to-markdown/v2"
 )
+
+const maxLineWidth = 79 // 80 - 1 for EBCDIC control byte
+
+func htmlToMarkdown(htmlContent string) string {
+	md, err := htmltomarkdown.ConvertString(htmlContent)
+	if err != nil {
+		log.Printf("HTML to markdown conversion warning: %v", err)
+		tagRegex := regexp.MustCompile("<[^>]*>")
+		md = tagRegex.ReplaceAllString(htmlContent, "")
+	}
+	md = html.UnescapeString(md)
+
+	blankLineRegex := regexp.MustCompile(`\n{3,}`)
+	md = blankLineRegex.ReplaceAllString(md, "\n\n")
+
+	return wrapLines(md, maxLineWidth)
+}
+
+func wrapLines(text string, maxWidth int) string {
+	var result strings.Builder
+	lines := strings.Split(text, "\n")
+
+	for i, line := range lines {
+		if i > 0 {
+			result.WriteString("\n")
+		}
+
+		if len(line) <= maxWidth {
+			result.WriteString(line)
+			continue
+		}
+		words := strings.Fields(line)
+		if len(words) == 0 {
+			continue
+		}
+
+		var currentLine strings.Builder
+		for j, word := range words {
+			if len(word) > maxWidth {
+				if currentLine.Len() > 0 {
+					result.WriteString(currentLine.String())
+					result.WriteString("\n")
+					currentLine.Reset()
+				}
+				for len(word) > maxWidth {
+					result.WriteString(word[:maxWidth])
+					result.WriteString("\n")
+					word = word[maxWidth:]
+				}
+				if len(word) > 0 {
+					currentLine.WriteString(word)
+				}
+				continue
+			}
+
+			newLen := currentLine.Len()
+			if newLen > 0 {
+				newLen++
+			}
+			newLen += len(word)
+
+			if newLen > maxWidth {
+				result.WriteString(currentLine.String())
+				result.WriteString("\n")
+				currentLine.Reset()
+				currentLine.WriteString(word)
+			} else {
+				if j > 0 && currentLine.Len() > 0 {
+					currentLine.WriteString(" ")
+				}
+				currentLine.WriteString(word)
+			}
+		}
+
+		if currentLine.Len() > 0 {
+			result.WriteString(currentLine.String())
+		}
+	}
+
+	return result.String()
+}
 
 func parseAddress(addr string) (user, node string) {
 	parts := strings.Split(addr, "@")

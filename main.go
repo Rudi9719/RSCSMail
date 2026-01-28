@@ -18,7 +18,6 @@ import (
 	"bytes"
 	"crypto/tls"
 	"fmt"
-	"html"
 	"io"
 	"log"
 	"mime"
@@ -36,8 +35,6 @@ import (
 
 var (
 	config          Config
-	htmlTagRegex    = regexp.MustCompile("<[^>]*>")
-	htmlLinkRegex   = regexp.MustCompile(`(?i)<a[^>]*href=["']([^"']*)["'][^>]*>((?s).*?)</a>`)
 	cmsUserRegex    = regexp.MustCompile(`[^a-zA-Z0-9]+`)
 	processingFiles sync.Map
 )
@@ -212,18 +209,8 @@ func (s *Session) Data(r io.Reader) error {
 	}
 
 	if !hasPlain && htmlBuf.Len() > 0 {
-		htmlStr := htmlBuf.String()
-		htmlStr = htmlLinkRegex.ReplaceAllStringFunc(htmlStr, func(match string) string {
-			parts := htmlLinkRegex.FindStringSubmatch(match)
-			if len(parts) >= 3 {
-				url := html.UnescapeString(parts[1])
-				text := parts[2]
-				return fmt.Sprintf("%s (%s)", text, url)
-			}
-			return match
-		})
-		stripped := htmlTagRegex.ReplaceAllString(htmlStr, "")
-		bodyBuf.WriteString(stripped)
+		converted := htmlToMarkdown(htmlBuf.String())
+		bodyBuf.WriteString(converted)
 	}
 
 	// Derive DOS 8.3 style short names for all attachments
