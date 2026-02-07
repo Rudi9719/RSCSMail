@@ -292,11 +292,7 @@ func sendOverNJE(user, node, file, cmsFn, cmsFt, subject string) error {
 	log.Printf("DEBUG: sendOverNJE target=%s fn=%s ft=%s subject=%q", target, cmsFn, cmsFt, subject)
 
 	args := []string{target, "-fn", cmsFn, cmsFt}
-
-	if config.NJE.RunAsUser != "" {
-		args = append(args, "-u", config.NJE.RunAsUser)
-	}
-
+	args = append(args, "-u", config.NJE.RunAsUser)
 	tagStr := config.NJE.Tag
 	if subject != "" {
 		if tagStr != "" {
