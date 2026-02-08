@@ -497,32 +497,23 @@ func parseSpoolData(content []byte, receiveOutput string, rscsSender string) (en
 	realSender := determineInitialSender(receiveOutput, rscsSender)
 
 	scanner := bufio.NewScanner(bytes.NewReader(content))
-	parsingHeaders := true
 	firstBodyLine := true
 
 	for scanner.Scan() {
 		line := scanner.Text()
-		trimmed := strings.TrimSpace(line)
-		if parsingHeaders {
-			if trimmed == "" {
-				parsingHeaders = false
-				continue
-			}
-			if parseHeaderLine(line, headers) {
-				continue
-			}
-			parsingHeaders = false
-		}
 
 		if strings.HasPrefix(line, rscsNodePrefix) {
 			break
+		}
+
+		if strings.Contains(line, "MSG:FROM") && strings.Contains(line, strings.ToUpper(config.Routing.NJESender)) {
+			continue
 		}
 
 		if isGarbage(line) {
 			continue
 		}
 
-		// Continue checking for PROFS-style headers embedded in body
 		if parseHeaderLine(line, headers) {
 			continue
 		}
