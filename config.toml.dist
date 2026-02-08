@@ -1,6 +1,5 @@
 [server]
 listen_addr = ":25"
-domain = "example.org"
 ehlo_identity = "mailhost.eample.org"
 tls_cert_file = "/etc/letsencrypt/live/"
 tls_key_file = "/etc/letsencrypt/live/"
@@ -25,3 +24,7 @@ rscs_node = "EXAMPLE"
 smtp_node = "SMTP"
 dkim_key_path = "./dkim_private.pem"
 dkim_selector = "default"
+domains = [
+	{node = "NODE1", domain="example.org"},
+	{node = "NODE2", domain="example.com"},
+]
