@@ -110,17 +110,24 @@ func parseRSCSHeaders(r io.Reader) (map[string]string, error) {
 }
 
 func resolveNode(domain string) string {
-	if strings.EqualFold(domain, config.Server.Domain) {
-		return config.Routing.RSCSNode
+	if idx := strings.LastIndex(domain, "@"); idx != -1 {
+		domain = domain[idx+1:]
+	}
+	for _, pair := range config.Routing.Domains {
+		if strings.EqualFold(pair.INetDomain, domain) {
+			return pair.RSCSNode
+		}
 	}
 	return ""
 }
 
 func resolveSender(user, node string) string {
-	if strings.EqualFold(config.Routing.RSCSNode, node) {
-		return fmt.Sprintf("%s@%s", strings.ToLower(user), config.Server.Domain)
+	for _, pair := range config.Routing.Domains {
+		if strings.EqualFold(pair.RSCSNode, node) {
+			return fmt.Sprintf("%s@%s", strings.ToLower(user), pair.INetDomain)
+		}
 	}
-	return fmt.Sprintf("%s@%s", strings.ToLower(user), config.Server.Domain)
+	return fmt.Sprintf("%s@%s", strings.ToLower(user), config.Routing.Domains[0].INetDomain)
 }
 
 func processSpoolFile(path string) {
@@ -182,7 +189,7 @@ func processSpoolFile(path string) {
 		fmt.Fprintf(msg, "Date: %s\r\n", headers["date"])
 	}
 	if headers["message-id"] == "" {
-		msgID := fmt.Sprintf("<%d.%s@%s>", time.Now().UnixNano(), "rscs", config.Server.Domain)
+		msgID := fmt.Sprintf("<%d.%s>", time.Now().UnixNano(), realSender)
 		fmt.Fprintf(msg, "Message-ID: %s\r\n", msgID)
 	} else {
 		fmt.Fprintf(msg, "Message-ID: %s\r\n", headers["message-id"])
@@ -289,11 +296,12 @@ func processSpoolFile(path string) {
 }
 
 func sendBounce(recipient, failedRcpt, reason string) error {
-	bounceSender := fmt.Sprintf("%s@%s", config.NJE.RunAsUser, config.Server.Domain)
+	domain := resolveNode(recipient)
+	bounceSender := fmt.Sprintf("%s@%s", config.NJE.RunAsUser, domain)
 	subject := fmt.Sprintf("Undeliverable: Mail to %s", failedRcpt)
 
 	bodyBuf := &bytes.Buffer{}
-	fmt.Fprintf(bodyBuf, "This is RSCS Mail Gateway for %s.\n\n", config.Server.Domain)
+	fmt.Fprintf(bodyBuf, "This is RSCS Mail Gateway for %s.\n\n", domain)
 	fmt.Fprintf(bodyBuf, "Your message could not be delivered to the following addresses.\n")
 	fmt.Fprintf(bodyBuf, "This is a permanent error.\n\n")
 	fmt.Fprintf(bodyBuf, "<%s>:\n", failedRcpt)
@@ -481,259 +489,135 @@ func normalizeAddresses(s string) string {
 }
 
 func parseSpoolData(content []byte, receiveOutput string, rscsSender string) (envelopeSender, headerFrom, to, subject string, headers map[string]string, body string) {
-	var receiveSender string
-	var bodyBuilder strings.Builder
-	parsingHeaders := true
-	firstBodyLine := true
 	headers = make(map[string]string)
+	var bodyBuilder strings.Builder
 	bodyBuilder.Grow(len(content))
-	scanner := bufio.NewScanner(bytes.NewReader(content))
-	serverDomainUpper := strings.ToUpper(config.Server.Domain)
-	runAsUserUpper := strings.ToUpper(config.NJE.RunAsUser)
-	smtpNodeUpper := strings.ToUpper(config.Routing.SMTPNode)
-	rscsNodeUpper := strings.ToUpper(config.Routing.RSCSNode)
-	rscsNodePrefix := fmt.Sprintf("[%s", rscsNodeUpper)
 
-	if rscsSender != "" {
-		receiveSender = rscsSender
-	} else if receiveOutput != "" {
-		words := strings.Fields(receiveOutput)
-		wordsLower := make([]string, len(words))
-		for i, w := range words {
-			wordsLower[i] = strings.ToLower(w)
-		}
-		for i, w := range wordsLower {
-			if w == "from" && i+2 < len(words) {
-				if wordsLower[i+2] == "at" {
-					candidateUser := words[i+1]
-					receiveSender = fmt.Sprintf("%s@%s", candidateUser, config.Server.Domain)
-					log.Printf("Identified envelope sender from receive: %s", receiveSender)
-					break
-				}
-			}
-		}
-	}
-	var realSender = receiveSender
+	rscsNodePrefix := fmt.Sprintf("[%s", strings.ToUpper(config.Routing.RSCSNode))
+	realSender := determineInitialSender(receiveOutput, rscsSender)
+
+	scanner := bufio.NewScanner(bytes.NewReader(content))
+	firstBodyLine := true
 
 	for scanner.Scan() {
 		line := scanner.Text()
 
-		if parsingHeaders {
-			trimmed := strings.TrimSpace(line)
-			if trimmed == "" {
-				continue
-			}
-
-			lineUpper := strings.ToUpper(line)
-			if strings.Contains(lineUpper, "MSG:FROM:") {
-				if realSender == "" {
-					parts := strings.SplitN(line, ":", 3)
-					if len(parts) >= 3 {
-						fromPart := strings.TrimSpace(parts[2])
-						if toIdx := strings.Index(fromPart, " TO:"); toIdx != -1 {
-							fromPart = strings.TrimSpace(fromPart[:toIdx])
-						}
-						fromPart = strings.ReplaceAll(fromPart, "--", "@")
-						fromPart = strings.ReplaceAll(fromPart, " ", "")
-						if strings.Contains(fromPart, "@") {
-							parts := strings.Split(fromPart, "@")
-							if len(parts) == 2 {
-								realSender = resolveSender(parts[0], parts[1])
-							}
-						}
-					}
-				}
-				continue
-			}
-
-			if idx := strings.Index(line, ":"); idx > 0 {
-				rawKey := line[:idx]
-				key := strings.ToLower(strings.TrimFunc(rawKey, func(r rune) bool {
-					return !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9'))
-				}))
-				if len(key) > 7 {
-					continue
-				}
-
-				val := strings.TrimSpace(line[idx+1:])
-
-				switch key {
-				case "to", "toa":
-					upperVal := strings.ToUpper(val)
-					if strings.Contains(upperVal, runAsUserUpper) &&
-						strings.Contains(upperVal, smtpNodeUpper) ||
-						strings.Contains(upperVal, serverDomainUpper) {
-						continue
-					}
-					normalized := normalizeAddresses(val)
-					if headers["to"] == "" {
-						headers["to"] = normalized
-					} else {
-						headers["to"] += ", " + normalized
-					}
-				case "from", "frm":
-					headers["from"] = val
-				case "cc":
-					normalized := normalizeAddresses(val)
-					if headers["cc"] == "" {
-						headers["cc"] = normalized
-					} else {
-						headers["cc"] += ", " + normalized
-					}
-				case "bcc":
-					normalized := normalizeAddresses(val)
-					if headers["bcc"] == "" {
-						headers["bcc"] = normalized
-					} else {
-						headers["bcc"] += ", " + normalized
-					}
-				case "subject":
-					headers["subject"] = val
-				case "date":
-					headers["date"] = val
-				}
-
-				if key == "to" || key == "toa" || key == "from" || key == "frm" || key == "cc" || key == "bcc" || key == "subject" || key == "date" {
-					continue
-				}
-
-				log.Printf("Skipping unknown header line: %s", line)
-				continue
-			}
-
-			parsingHeaders = false
-			if strings.HasPrefix(line, rscsNodePrefix) {
-				break
-			}
-			if isGarbage(line) {
-				continue
-			}
-			if idx := strings.Index(line, ":"); idx > 0 && idx < 15 {
-				key := strings.ToLower(strings.TrimSpace(line[:idx]))
-				val := strings.TrimSpace(line[idx+1:])
-				if key == "to" && strings.Contains(val, "@") {
-					normalized := normalizeAddresses(val)
-					if headers["to"] == "" {
-						headers["to"] = normalized
-					} else {
-						headers["to"] += ", " + normalized
-					}
-					continue
-				}
-				if (key == "from" || key == "frm") && headers["from"] == "" {
-					headers["from"] = val
-					continue
-				}
-				if key == "subject" && headers["subject"] == "" {
-					headers["subject"] = val
-					continue
-				}
-				if key == "cc" && strings.Contains(val, "@") {
-					normalized := normalizeAddresses(val)
-					if headers["cc"] == "" {
-						headers["cc"] = normalized
-					} else {
-						headers["cc"] += ", " + normalized
-					}
-					continue
-				}
-				if key == "bcc" && strings.Contains(val, "@") {
-					normalized := normalizeAddresses(val)
-					if headers["bcc"] == "" {
-						headers["bcc"] = normalized
-					} else {
-						headers["bcc"] += ", " + normalized
-					}
-					continue
-				}
-			}
-			if !firstBodyLine {
-				bodyBuilder.WriteString("\r\n")
-			}
-			bodyBuilder.WriteString(line)
-			firstBodyLine = false
-		} else {
-			if strings.HasPrefix(line, rscsNodePrefix) {
-				break
-			}
-			if isGarbage(line) {
-				continue
-			}
-			if idx := strings.Index(line, ":"); idx > 0 && idx < 15 {
-				key := strings.ToLower(strings.TrimSpace(line[:idx]))
-				val := strings.TrimSpace(line[idx+1:])
-				if key == "to" && strings.Contains(val, "@") {
-					normalized := normalizeAddresses(val)
-					if headers["to"] == "" {
-						headers["to"] = normalized
-					} else {
-						headers["to"] += ", " + normalized
-					}
-					continue
-				}
-				if (key == "from" || key == "frm") && headers["from"] == "" {
-					headers["from"] = val
-					continue
-				}
-				if key == "subject" && headers["subject"] == "" {
-					headers["subject"] = val
-					continue
-				}
-				if key == "cc" && strings.Contains(val, "@") {
-					normalized := normalizeAddresses(val)
-					if headers["cc"] == "" {
-						headers["cc"] = normalized
-					} else {
-						headers["cc"] += ", " + normalized
-					}
-					continue
-				}
-				if key == "bcc" && strings.Contains(val, "@") {
-					normalized := normalizeAddresses(val)
-					if headers["bcc"] == "" {
-						headers["bcc"] = normalized
-					} else {
-						headers["bcc"] += ", " + normalized
-					}
-					continue
-				}
-			}
-			if !firstBodyLine {
-				bodyBuilder.WriteString("\r\n")
-			}
-			bodyBuilder.WriteString(line)
-			firstBodyLine = false
+		if strings.HasPrefix(line, rscsNodePrefix) {
+			break
 		}
-	}
 
+		if strings.Contains(line, "MSG:FROM") && strings.Contains(line, strings.ToUpper(config.Routing.NJESender)) {
+			continue
+		}
+
+		if isGarbage(line) {
+			continue
+		}
+
+		if parseHeaderLine(line, headers) {
+			continue
+		}
+
+		if !firstBodyLine {
+			bodyBuilder.WriteString("\r\n")
+		}
+		bodyBuilder.WriteString(line)
+		firstBodyLine = false
+	}
 	to = headers["to"]
-	textFrom := headers["from"]
 	subject = headers["subject"]
+	headerFrom = finalizeFromHeader(headers["from"], realSender)
+	return realSender, headerFrom, to, subject, headers, bodyBuilder.String()
+}
 
-	if strings.HasPrefix(realSender, "@") || realSender == "" {
-		if textFrom != "" {
-			if idx := strings.LastIndex(textFrom, "<"); idx != -1 && strings.HasSuffix(textFrom, ">") {
-				realSender = textFrom[idx+1 : len(textFrom)-1]
-			} else {
-				realSender = textFrom
-			}
-			log.Printf("Using From header as envelope sender: %s", realSender)
+func determineInitialSender(receiveOutput, rscsSender string) string {
+	if rscsSender != "" {
+		return rscsSender
+	}
+	if receiveOutput != "" {
+		words := strings.Fields(receiveOutput)
+		if len(words) >= 6 &&
+			strings.EqualFold(words[2], "from") &&
+			strings.EqualFold(words[4], "at") {
+
+			rUser := words[3]
+			rNode := words[5]
+			return resolveSender(rUser, rNode)
 		}
 	}
 
-	if strings.Contains(realSender, "@") {
-		parts := strings.Split(realSender, "@")
-		if len(parts) == 2 && !strings.EqualFold(parts[1], config.Server.Domain) {
-			log.Printf("Rewriting sender domain %s to %s", parts[1], config.Server.Domain)
-			realSender = fmt.Sprintf("%s@%s", parts[0], config.Server.Domain)
+	return ""
+}
+
+func finalizeFromHeader(headerVal, envelopeSender string) string {
+	if headerVal == "" {
+		return envelopeSender
+	}
+
+	cleanName := strings.Trim(headerVal, "\"")
+	if strings.Contains(cleanName, "<") {
+		return headerVal
+	}
+
+	return fmt.Sprintf("\"%s\" <%s>", cleanName, envelopeSender)
+}
+
+func parseHeaderLine(line string, headers map[string]string) bool {
+	keyRaw, valRaw, found := strings.Cut(line, ":")
+	if !found {
+		return false
+	}
+
+	// Key must have no spaces and only contain valid header characters
+	key := strings.TrimSpace(keyRaw)
+	if strings.ContainsAny(key, " \t") {
+		return false
+	}
+	if len(key) == 0 {
+		return false
+	}
+
+	keyLower := strings.ToLower(key)
+	val := strings.TrimSpace(valRaw)
+
+	switch keyLower {
+	case "to", "toa":
+		upperVal := strings.ToUpper(val)
+		if strings.Contains(upperVal, strings.ToUpper(config.NJE.RunAsUser)) &&
+			strings.Contains(upperVal, strings.ToUpper(config.Routing.SMTPNode)) {
+			return true
 		}
+		addHeader(headers, "to", normalizeAddresses(val))
+	case "cc":
+		addHeader(headers, "cc", normalizeAddresses(val))
+	case "bcc":
+		addHeader(headers, "bcc", normalizeAddresses(val))
+	case "subject":
+		if headers["subject"] == "" {
+			headers["subject"] = val
+		}
+	case "date":
+		if headers["date"] == "" {
+			headers["date"] = val
+		}
+	case "from", "frm":
+		if headers["from"] == "" {
+			headers["from"] = val
+		}
+	case "message-id":
+		if headers["message-id"] == "" {
+			headers["message-id"] = val
+		}
+	default:
+		return false
 	}
+	return true
+}
 
-	finalFrom := realSender
-	if textFrom != "" {
-		cleanName := strings.Trim(textFrom, "\"")
-		finalFrom = fmt.Sprintf("\"%s\" <%s>", cleanName, realSender)
+func addHeader(headers map[string]string, key, val string) {
+	if headers[key] == "" {
+		headers[key] = val
+	} else {
+		headers[key] += ", " + val
 	}
-
-	return realSender, finalFrom, to, subject, headers, bodyBuilder.String()
 }

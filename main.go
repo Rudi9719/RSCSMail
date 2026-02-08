@@ -70,16 +70,17 @@ func (s *Session) Rcpt(to string, opts *smtp.RcptOptions) error {
 	}
 	domain := parts[1]
 
-	if !strings.EqualFold(domain, config.Server.Domain) {
-		log.Printf("Skipping %s: domain mismatch (expected %s) (From: %s via %s)", to, config.Server.Domain, s.From,
-			s.Conn.RemoteAddr().String())
-		return &smtp.SMTPError{
-			Code:    550,
-			Message: "Relay access denied",
+	for _, pair := range config.Routing.Domains {
+		if strings.EqualFold(pair.INetDomain, domain) {
+			s.To = append(s.To, to)
+			return nil
 		}
 	}
-	s.To = append(s.To, to)
-	return nil
+
+	return &smtp.SMTPError{
+		Code:    550,
+		Message: "Relay access denied",
+	}
 }
 
 // Reset resets the session state.
@@ -313,13 +314,6 @@ func main() {
 		log.Printf("https://raw.githubusercontent.com/Rudi9719/RSCSMail/refs/heads/master/config.toml.dist")
 	}
 
-	// Check for ehlo_identity
-	if config.Server.EhloIdentity == "" {
-		config.Server.EhloIdentity = config.Server.Domain
-		log.Printf("ehlo identity not set, see link below for more info. ")
-		log.Printf("https://raw.githubusercontent.com/Rudi9719/RSCSMail/refs/heads/master/config.toml.dist")
-	}
-
 	if err := ensureDKIMKey(config.Routing.DkimKeyPath); err != nil {
 		log.Fatalf("Failed to ensure DKIM key: %v", err)
 	}
@@ -334,7 +328,7 @@ func main() {
 	be := &Backend{}
 	s := smtp.NewServer(be)
 	s.Addr = config.Server.ListenAddr
-	s.Domain = config.Server.Domain
+	s.Domain = config.Routing.Domains[0].INetDomain
 	s.MaxMessageBytes = 20 * 1024 * 1024
 	s.AllowInsecureAuth = true
 

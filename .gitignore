@@ -5,3 +5,4 @@ config.toml
 *.spool
 *.msg
 *.exe
+.vscode

@@ -14,7 +14,7 @@ import (
 	htmltomarkdown "github.com/JohannesKaufmann/html-to-markdown/v2"
 )
 
-const maxLineWidth = 79 // 80 - 1 for EBCDIC control byte
+const maxLineWidth = 78 // 80 - 1 for EBCDIC control byte
 
 func htmlToMarkdown(htmlContent string) string {
 	md, err := htmltomarkdown.ConvertString(htmlContent)
@@ -233,9 +233,17 @@ func handleDispatch(recipient, filePath, cmsFn, cmsFt, subject string) {
 		return
 	}
 	user, domain := parts[0], parts[1]
+	found := false
+	for _, pair := range config.Routing.Domains {
+		if strings.EqualFold(pair.INetDomain, domain) {
+			found = true
+			targetNode = pair.RSCSNode
+			break
+		}
+	}
 
-	if !strings.EqualFold(domain, config.Server.Domain) {
-		reason := fmt.Sprintf("domain %s not configured (only %s supported)", domain, config.Server.Domain)
+	if !found {
+		reason := fmt.Sprintf("domain %s not configured", domain)
 
 		switch actionLower {
 		case "save":
