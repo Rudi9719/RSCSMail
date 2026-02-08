@@ -25,9 +25,13 @@ type SpoolConfig struct {
 type ServerConfig struct {
 	ListenAddr   string `toml:"listen_addr"`
 	EhloIdentity string `toml:"ehlo_identity"`
-	Domain       string `toml:"domain"`
 	TLSCertFile  string `toml:"tls_cert_file"`
 	TLSKeyFile   string `toml:"tls_key_file"`
+}
+
+type DomainPair struct {
+	INetDomain string `toml:"domain"`
+	RSCSNode   string `toml:"node"`
 }
 
 // NJEConfig defines constraints and command options for the NJE/Punch interface.
@@ -44,13 +48,14 @@ type NJEConfig struct {
 
 // RoutingConfig defines how emails are mapped to NJE nodes and users.
 type RoutingConfig struct {
-	DefaultAction  string `toml:"default_action"`
-	ErrorRecipient string `toml:"error_recipient"`
-	NJESender      string `toml:"nje_sender"`
-	RSCSNode       string `toml:"rscs_node"`
-	SMTPNode       string `toml:"smtp_node"`
-	DkimKeyPath    string `toml:"dkim_key_path"`
-	DkimSelector   string `toml:"dkim_selector"`
+	Domains        []DomainPair `toml:"domains"`
+	DefaultAction  string       `toml:"default_action"`
+	ErrorRecipient string       `toml:"error_recipient"`
+	NJESender      string       `toml:"nje_sender"`
+	RSCSNode       string       `toml:"rscs_node"`
+	SMTPNode       string       `toml:"smtp_node"`
+	DkimKeyPath    string       `toml:"dkim_key_path"`
+	DkimSelector   string       `toml:"dkim_selector"`
 }
 
 // Backend implements smtp.Backend.
