@@ -497,7 +497,6 @@ func parseSpoolData(content []byte, receiveOutput string, rscsSender string) (en
 	realSender := determineInitialSender(receiveOutput, rscsSender)
 
 	scanner := bufio.NewScanner(bytes.NewReader(content))
-	firstBodyLine := true
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -517,12 +516,7 @@ func parseSpoolData(content []byte, receiveOutput string, rscsSender string) (en
 		if parseHeaderLine(line, headers) {
 			continue
 		}
-
-		if !firstBodyLine {
-			bodyBuilder.WriteString("\r\n")
-		}
 		bodyBuilder.WriteString(line)
-		firstBodyLine = false
 	}
 	to = headers["to"]
 	subject = headers["subject"]
