@@ -237,6 +237,8 @@ func handleDispatch(recipient, filePath, cmsFn, cmsFt, subject string) {
 	for _, pair := range config.Routing.Domains {
 		if strings.EqualFold(pair.INetDomain, domain) {
 			found = true
+			targetNode = pair.RSCSNode
+			break
 		}
 	}
 
