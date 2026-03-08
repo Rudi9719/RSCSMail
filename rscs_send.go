@@ -554,16 +554,13 @@ func finalizeFromHeader(headerVal, envelopeSender string) string {
 		return envelopeSender
 	}
 
-	cleanName := strings.ReplaceAll(headerVal, "\n", "")
-
+	cleanName := strings.Trim(headerVal, "\"")
 	if strings.Contains(cleanName, "<") {
-		return cleanName
+		return headerVal
 	}
+	cleanName = strings.ReplaceAll(cleanName, "\n", "")
 
-	cleanName = strings.ReplaceAll(cleanName, "\"", "")
-	cleanName = strings.Join(strings.Fields(cleanName), " ")
-
-	return fmt.Sprintf("\"%s\" <%s>", cleanName, envelopeSender)
+	return fmt.Sprintf("\"%s\" <%s>", strings.TrimSpace(cleanName), envelopeSender)
 }
 
 func parseHeaderLine(line string, headers map[string]string) bool {

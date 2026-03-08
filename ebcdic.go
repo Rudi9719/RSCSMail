@@ -92,7 +92,45 @@ func writeEbcdicRecord(buf *bytes.Buffer, control []byte, asciiContent string) {
 	}
 }
 
+func sanitizeAscii(s string) string {
+	var clean strings.Builder
+	clean.Grow(len(s))
+	for _, r := range s {
+		if r >= 32 && r < 127 {
+			clean.WriteRune(r)
+		} else if r == '\t' {
+			clean.WriteString("  ")
+		} else if r >= 160 && r <= 255 {
+			ebByte := asciiToEbcdic[byte(r)]
+			if ebByte >= 0x40 && ebByte != 0x40 {
+				clean.WriteRune(r)
+			}
+		} else {
+			switch r {
+			case 0x201C, 0x201D: // Weird double quotes
+				clean.WriteRune('"')
+			case 0x2018, 0x2019: // Weird single quotes
+				clean.WriteRune('\'')
+			case 0x2013, 0x2014: // Weird dashes
+				clean.WriteRune('-')
+			case 0x2026: // Eclipse
+				clean.WriteString("...")
+			case 0xFEFF:
+				// Ignore BOM
+			}
+		}
+	}
+	return clean.String()
+}
+
 func generateEbcdicNote(from string, to []string, subject, fullSender string, body io.Reader, timestamp time.Time) (*bytes.Buffer, error) {
+	from = sanitizeAscii(from)
+	subject = sanitizeAscii(subject)
+	fullSender = sanitizeAscii(fullSender)
+	for i := range to {
+		to[i] = sanitizeAscii(to[i])
+	}
+
 	ebcdicBuf := ebcdicBufPool.Get().(*bytes.Buffer)
 	ebcdicBuf.Reset()
 
@@ -136,7 +174,7 @@ func generateEbcdicNote(from string, to []string, subject, fullSender string, bo
 	scanner := bufio.NewScanner(body)
 	for scanner.Scan() {
 		line := scanner.Text()
-		writeEbcdicRecord(ebcdicBuf, []byte{0x40}, line)
+		writeEbcdicRecord(ebcdicBuf, []byte{0x40}, sanitizeAscii(line))
 	}
 
 	if err := scanner.Err(); err != nil {
