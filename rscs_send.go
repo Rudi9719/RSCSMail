@@ -502,15 +502,15 @@ func parseSpoolData(content []byte, receiveOutput string, rscsSender string) (en
 	for scanner.Scan() {
 		line := scanner.Text()
 
+		if isGarbage(line) {
+			continue
+		}
+
 		if strings.HasPrefix(line, rscsNodePrefix) {
 			break
 		}
 
 		if strings.Contains(line, "MSG:FROM") && strings.Contains(line, strings.ToUpper(config.Routing.NJESender)) {
-			continue
-		}
-
-		if isGarbage(line) {
 			continue
 		}
 
@@ -559,7 +559,7 @@ func finalizeFromHeader(headerVal, envelopeSender string) string {
 		return headerVal
 	}
 
-	return fmt.Sprintf("\"%s\" <%s>", cleanName, envelopeSender)
+	return fmt.Sprintf("\"%s\" <%s>", strings.TrimSpace(cleanName), envelopeSender)
 }
 
 func parseHeaderLine(line string, headers map[string]string) bool {
