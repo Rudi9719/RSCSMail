@@ -100,6 +100,24 @@ func sanitizeAscii(s string) string {
 			clean.WriteRune(r)
 		} else if r == '\t' {
 			clean.WriteString("  ")
+		} else if r >= 160 && r <= 255 {
+			ebByte := asciiToEbcdic[byte(r)]
+			if ebByte >= 0x40 && ebByte != 0x40 {
+				clean.WriteRune(r)
+			}
+		} else {
+			switch r {
+			case 0x201C, 0x201D: // Weird double quotes
+				clean.WriteRune('"')
+			case 0x2018, 0x2019: // Weird single quotes
+				clean.WriteRune('\'')
+			case 0x2013, 0x2014: // Weird dashes
+				clean.WriteRune('-')
+			case 0x2026: // Eclipse
+				clean.WriteString("...")
+			case 0xFEFF:
+				// Ignore BOM
+			}
 		}
 	}
 	return clean.String()
